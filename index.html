@@ -1218,9 +1218,9 @@
 <meta property="og:image:height" content="720">
 <meta name="twitter:image" content="https://here.now/og/frosty-lichen-w688.jpg">
 <meta name="twitter:card" content="summary_large_image"></head>
-<body data-theme="dark" class="nv-on">
-<!-- 防闪烁：在解析到样式前先挂模式 class（默认简易模式，localStorage 记忆） -->
-<script>try{if(localStorage.getItem('pv-mode')!=='expert')document.body.classList.add('simple-mode');}catch(e){document.body.classList.add('simple-mode')}</script>
+<body data-theme="light" class="nv-on">
+<!-- 防闪烁：在解析到样式前先挂模式与主题 class（默认浅色主题；记忆值优先） -->
+<script>try{if(localStorage.getItem('pv-mode')!=='expert')document.body.classList.add('simple-mode');if(localStorage.getItem('pv-theme')==='dark')document.body.dataset.theme='dark';}catch(e){document.body.classList.add('simple-mode')}</script>
 <main class="shell">
   <header class="page-title">
     <div>
@@ -1443,11 +1443,11 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
             </div>
           </div>
 
-          <div class="toolbar-group">
+          <div class="toolbar-group adv-only">
             <span class="toolbar-label">主题</span>
             <div class="btn-group" role="group" aria-label="主题切换">
-              <button type="button" data-theme-btn="dark" class="on">深色</button>
-              <button type="button" data-theme-btn="light">浅色</button>
+              <button type="button" data-theme-btn="dark">深色</button>
+              <button type="button" data-theme-btn="light" class="on">浅色</button>
             </div>
           </div>
 
@@ -2291,7 +2291,14 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
       themeButtons.forEach(function (b) {
         b.classList.toggle('on', b === btn);
       });
+      // 记忆主题：下次打开保持所选（防闪脚本在 body 解析时应用）
+      try { localStorage.setItem('pv-theme', btn.dataset.themeBtn); } catch (e) {}
     });
+  });
+
+  // 初始高亮与当前主题一致（防闪脚本可能已把主题切到记忆值）
+  themeButtons.forEach(function (b) {
+    b.classList.toggle('on', b.dataset.themeBtn === body.dataset.theme);
   });
 
   /* ==========================================================
@@ -3258,7 +3265,7 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
   var state = {
     imgEl: null,           // 当前图片
     imgLoaded: false,
-    bgColor: '#0a0e13',    // 与页面主题一致的填充背景色
+    bgColor: '#eef1f4',    // 与页面主题一致的填充背景色（导出/生成前实时重读当前主题）
     music: null,           // AudioBuffer
     volume: 0.8,
     videoBlob: null,
