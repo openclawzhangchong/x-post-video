@@ -1999,6 +1999,33 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
     { name: 'Rosa Yilmaz', slug: 'rosa_yilmaz' }
   ];
 
+  /* Handle 独立池：105 个手写风格的真实感用户名（X 风格：小写字母/数字/下划线）。
+     随机时 60% 直接抽池（更像真实用户名），40% 仍用昵称 slug 生成保持人名关联；
+     简易模式下用户手动改昵称时 autoHandle 跟随逻辑不变。 */
+  var HANDLES = [
+    'chenmo_0421', 'starry_night99', 'moon_and_back', 'not_today_08', 'fenghua_2019',
+    'coffee_first_', 'late_bloomer7', 'rainy_daydream', 'wuwei_520', 'shanhai_1103',
+    'pixel_pioneer', 'cloudwalker_9', 'yueguang_613', 'midnight_tea__', 'slow_burn_88',
+    'luzhou_flavor', 'tianshi_0331', 'deep_blue_sea', 'huxi_0717', 'zhihu_says_no',
+    'paper_plane_11', 'echo_in_mind', 'liuliu_666u', 'frost_morning', 'dashu_0214',
+    'wumao_club', 'nebula_rider', 'yezi_1031', 'salted_fish_1', 'qingfeng_xulai',
+    'mo_yu_2026', 'candy_crushya', 'wukong_wins', 'bubble_tea_77', 'long_night_925',
+    'shuijing_0405', 'overthinker_z', 'xingchen_1208', 'lazy_sunday_y', 'miaomiao_66',
+    'fengyu_guilai', 'happy_little_u', 'moli_huakai', 'dark_choco_3', 'shan_dian_521',
+    'wanderer_09', 'tangguo_wu', 'star_gazing__', 'yiban_rensheng', 'neat_freak_5',
+    'qiuqiu_2333', 'haoyun_lailin', 'glitch_in_life', 'xiaoyu_0601', 'run_forest_run',
+    'mangguo_bushi', 'night_owl_44', 'yunjuan_yunshu', 'pixel_dust_2', 'taiyanghu_07',
+    'dreamer_233', 'suanning_0413', 'local_ghost__', 'yiwang_1314', 'fresh_air_90',
+    'huolishaonian', 'mianbao_yu', 'timeout_oftenn', 'liuli_0812', 'ke_ai_duozhi',
+    'still_water_z', 'fengzhi_yuan', 'maoerbao_06', 'sleepless_sg', 'yiduan_xinqing',
+    'code_monkey9', 'haitang_0411', 'zen_mode_on__', 'wanshi_ruyi', 'ufo_catcher_u',
+    'xingyun_0520', 'fluffy_cloud_1', 'shanhu_hai__', 'meimeng_xing', 'rewind_the_day',
+    'bingtang_03', 'lost_in_book', 'quanquan_0929', 'ningmeng_sui', 'stardust_4ever',
+    'chihuofengbao', 'gugu_0707', 'tianshi_yu', 'mocha_latte_6', 'feizao_0125',
+    'wandering_wu', 'yangguang_fz', 'duoduoke_079', 'lingxi_yibiji', 'piaoxu_66hai',
+    'no_filter_11', 'yuanqi_manman', 'whisper_0417', 'haixin_biscuit', 'sundial_dream'
+  ];
+
   var BIOS = [
     '前端老师。拆页面，也拆问题。\n平时写教学用的 HTML/CSS 小例子。',
     '写代码，也写教书笔记。\n最近在拆社交产品的页面结构。',
@@ -2566,12 +2593,14 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
   }
 
   function applyRandom() {
-    // 昵称 + handle 一起换：handle 由名字的 slug 生成
-    // 连点时避免抽到当前这个人（最多重抽 5 次），不然看起来像没反应
+    // 昵称 + handle 一起换：昵称抽人名池；handle 60% 抽真实风格池（105 个手写用户名），
+    // 40% 用昵称 slug 生成保持人名关联；连点时避免抽到当前值（最多重抽 5 次）
     var person = pick(PEOPLE);
     for (var i = 0; i < 5 && person.name === nameInput.value; i++) person = pick(PEOPLE);
     nameInput.value = person.name;
-    handleInput.value = rollHandle(person.slug);
+    var handle = Math.random() < 0.6 ? pick(HANDLES) : rollHandle(person.slug);
+    for (var h = 0; h < 5 && handle === handleInput.value; h++) handle = pick(HANDLES);
+    handleInput.value = handle;
 
     // 简介同理：池子只有 6 条，连点很容易抽回上一条，看起来像没换
     var bio = pick(BIOS);
