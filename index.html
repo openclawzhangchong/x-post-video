@@ -2553,7 +2553,8 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
         return res.json();
       })
       .then(function (j) {
-        var text = j && j.data && j.data.content;
+        // 兼容两种结构：ruseo 原始 { data:{content} } 与 Worker 代理 { content }
+        var text = (j && j.content) || (j && j.data && j.data.content);
         if (!text) return;
         if (bodyInput.value !== lastSoupText) return;   // 用户已改字，不覆盖
         bodyInput.value = text;
