@@ -8,3 +8,8 @@ node_modules/
 Thumbs.db
 .DS_Store
 *.tmp
+
+# MCP 运行产物与依赖
+outputs/
+node_modules/
+package-lock.json
