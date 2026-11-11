@@ -49,14 +49,67 @@ function buildWorker() {
   const muxer = fs.existsSync(muxerPath) ? fs.readFileSync(muxerPath, 'utf8') : '';
   return `const HTML = ${JSON.stringify(html)};
 const MUXER = ${JSON.stringify(muxer)};
+/* 澄曜 API（api.ruseo.cn）无 CORS 头，浏览器内跨域 fetch 被拦截 ——
+   这里提供同源代理：服务端取数后回传，页内 fetch 同源无 CORS 问题。
+   内存缓存 60s，降低对免费上游（100 次/分钟）的调用频率。 */
+const CACHE = new Map();
+const TTL = 60 * 1000;
+const RUSEO_TX = 'https://api.ruseo.cn/api/tx?type=1&imgtype=0';
+const RUSEO_SOUP = 'https://api.ruseo.cn/api/poison_soup';
+
+async function cached(key, fn) {
+  const hit = CACHE.get(key);
+  if (hit && Date.now() - hit.t < TTL) return hit.val;
+  const val = await fn();
+  CACHE.set(key, { t: Date.now(), val });
+  return val;
+}
+async function fetchJson(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('upstream ' + r.status);
+  return r.json();
+}
+
 export default {
   async fetch(request) {
     const url = new URL(request.url);
     const p = url.pathname;
+    const J = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'cache-control': 'no-store' } });
+
     if (p === "/vendor/mp4-muxer.min.js") {
       return new Response(MUXER, { headers: { "content-type": "application/javascript; charset=utf-8", "cache-control": "public, max-age=86400" } });
     }
     if (p === "/healthz") return new Response("ok");
+
+    // 毒鸡汤代理（JSON）：{ content: "..." }
+    if (p === "/api/ruseo/poison_soup") {
+      try {
+        const j = await cached('soup', () => fetchJson(RUSEO_SOUP));
+        const content = j && j.data && j.data.content;
+        if (!content) return J({ error: "no content" }, 502);
+        return J({ content });
+      } catch (e) {
+        return J({ error: String(e && e.message || e) }, 502);
+      }
+    }
+
+    // 随机头像代理（二进制图片）：服务端调 tx 拿图片地址后取图回传
+    if (p === "/api/ruseo/tx-img") {
+      try {
+        const imgUrl = await cached('tx-url', async () => {
+          const j = await fetchJson(RUSEO_TX);
+          const u = j && j.data && j.data.msg;
+          if (!u) throw new Error("no img url");
+          return u;
+        });
+        const img = await fetch(imgUrl);
+        if (!img.ok) throw new Error("img " + img.status);
+        return new Response(img.body, { headers: { "content-type": img.headers.get("content-type") || "image/jpeg", "cache-control": "no-store" } });
+      } catch (e) {
+        return J({ error: String(e && e.message || e) }, 502);
+      }
+    }
+
     return new Response(HTML, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
   }
 };

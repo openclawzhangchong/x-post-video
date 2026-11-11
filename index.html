@@ -810,7 +810,12 @@
     background: var(--page-bg);
     border-top: 1px solid var(--border);
   }
-  .shell { padding-bottom: 76px; }  /* 给固定页脚留出安全距离 */
+  .shell { padding-bottom: 76px; }  /* 给固定页脚留出安全距离（保护 main 内 footnotes） */
+
+  /* body 级底部余量：视频生成区在 main.shell 之外（末位块），其 margin-bottom
+     会塌陷出 body 不计入文档高度；用 body padding 兜底，确保滚动到底时
+     fixed 的 disclaimer（约 30px 高）不盖住视频区按钮行 */
+  body { padding-bottom: 60px; }
 
   @media (max-width: 420px) {
     .post { padding: 14px; }
@@ -1857,6 +1862,7 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
   function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
 
   // slug 是手工写的拼音/英文，保证 handle 长得像真的
+  // 132 人（60 中文 + 45 英文 + 27 原有），全部虚构，不对应任何真实人物
   var PEOPLE = [
     { name: '周行野', slug: 'zhou_xingye' },
     { name: '沈迟', slug: 'shen_chi' },
@@ -1884,7 +1890,113 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
     { name: 'Owen Frost', slug: 'owen_frost' },
     { name: 'Lena Ashcroft', slug: 'lena_ashcroft' },
     { name: 'Caleb Nott', slug: 'caleb_nott' },
-    { name: 'Iris Vane', slug: 'iris_vane' }
+    { name: 'Iris Vane', slug: 'iris_vane' },
+    // —— 中文扩充 ——
+    { name: '宋知许', slug: 'song_zhixu' },
+    { name: '陈默', slug: 'chen_mo' },
+    { name: '白叙川', slug: 'bai_xuchuan' },
+    { name: '方晏清', slug: 'fang_yanqing' },
+    { name: '叶栖迟', slug: 'ye_qichi' },
+    { name: '秦观澜', slug: 'qin_guanlan' },
+    { name: '孟星河', slug: 'meng_xinghe' },
+    { name: '贺清嘉', slug: 'he_qingjia' },
+    { name: '齐晏礼', slug: 'qi_yanli' },
+    { name: '裴叙白', slug: 'pei_xubai' },
+    { name: '谢栖迟', slug: 'xie_qichi' },
+    { name: '卫昭', slug: 'wei_zhao' },
+    { name: '阮清词', slug: 'ruan_qingci' },
+    { name: '唐晚吟', slug: 'tang_wanyin' },
+    { name: '沈疏桐', slug: 'shen_shutong' },
+    { name: '韩澈', slug: 'han_che' },
+    { name: '楚一鸣', slug: 'chu_yiming' },
+    { name: '洛云舟', slug: 'luo_yunzhou' },
+    { name: '温既明', slug: 'wen_jiming' },
+    { name: '苏折竹', slug: 'su_zhezhu' },
+    { name: '江声阔', slug: 'jiang_shengkuo' },
+    { name: '程霁月', slug: 'cheng_jiyue' },
+    { name: '严浮生', slug: 'yan_fusheng' },
+    { name: '柳闻莺', slug: 'liu_wenying' },
+    { name: '邵长风', slug: 'shao_changfeng' },
+    { name: '颜肃之', slug: 'yan_suzhi' },
+    { name: '佟雅', slug: 'tong_ya' },
+    { name: '秦朗', slug: 'qin_lang' },
+    { name: '时雨', slug: 'shi_yu' },
+    { name: '白霜', slug: 'bai_shuang' },
+    { name: '楚歌', slug: 'chu_ge' },
+    { name: '池鱼', slug: 'chi_yu' },
+    { name: '迟桉', slug: 'chi_an' },
+    { name: '丛蕊', slug: 'cong_rui' },
+    { name: '戴望', slug: 'dai_wang' },
+    { name: '邓鸣谦', slug: 'deng_mingqian' },
+    { name: '丁燃', slug: 'ding_ran' },
+    { name: '段惊蛰', slug: 'duan_jingzhe' },
+    { name: '冯栖梧', slug: 'feng_qiwu' },
+    { name: '高知行', slug: 'gao_zhixing' },
+    { name: '关山月', slug: 'guan_shanyue' },
+    { name: '顾南音', slug: 'gu_nanyin' },
+    { name: '韩溯', slug: 'han_su' },
+    { name: '和月', slug: 'he_yue' },
+    { name: '胡不归', slug: 'hu_bugui' },
+    { name: '华聿', slug: 'hua_yu' },
+    { name: '黄粱', slug: 'huang_liang' },
+    { name: '纪云舒', slug: 'ji_yunshu' },
+    { name: '简白', slug: 'jian_bai' },
+    { name: '江晚', slug: 'jiang_wan' },
+    { name: '金沐', slug: 'jin_mu' },
+    { name: '康乐', slug: 'kang_le' },
+    { name: '雷雨', slug: 'lei_yu' },
+    { name: '黎照', slug: 'li_zhao' },
+    { name: '林深', slug: 'lin_shen' },
+    { name: '凌霜', slug: 'ling_shuang' },
+    { name: '龙潜', slug: 'long_qian' },
+    { name: '卢鸣', slug: 'lu_ming' },
+    { name: '陆停舟', slug: 'lu_tingzhou' },
+    // —— 英文扩充 ——
+    { name: 'Ethan Cole', slug: 'ethan_cole' },
+    { name: 'Olivia Hart', slug: 'olivia_hart' },
+    { name: 'Liam Brooks', slug: 'liam_brooks' },
+    { name: 'Emma Walsh', slug: 'emma_walsh' },
+    { name: 'Noah Reid', slug: 'noah_reid' },
+    { name: 'Ava Bennett', slug: 'ava_bennett' },
+    { name: 'Lucas Grey', slug: 'lucas_grey' },
+    { name: 'Sophia Lane', slug: 'sophia_lane' },
+    { name: 'Mason Clark', slug: 'mason_clark' },
+    { name: 'Isla Reed', slug: 'isla_reed' },
+    { name: 'Aiden Fox', slug: 'aiden_fox' },
+    { name: 'Zoe Palmer', slug: 'zoe_palmer' },
+    { name: 'Caleb Moss', slug: 'caleb_moss' },
+    { name: 'Ruby Turner', slug: 'ruby_turner' },
+    { name: 'Oscar Hale', slug: 'oscar_hale' },
+    { name: 'Nina Patel', slug: 'nina_patel' },
+    { name: 'Felix Grant', slug: 'felix_grant' },
+    { name: 'Chloe Adams', slug: 'chloe_adams' },
+    { name: 'Hugo Wells', slug: 'hugo_wells' },
+    { name: 'Lily Brooks', slug: 'lily_brooks' },
+    { name: 'Aaron Blake', slug: 'aaron_blake' },
+    { name: 'Maya Collins', slug: 'maya_collins' },
+    { name: 'Leo Barnes', slug: 'leo_barnes' },
+    { name: 'Ivy Fletcher', slug: 'ivy_fletcher' },
+    { name: 'Owen Marsh', slug: 'owen_marsh' },
+    { name: 'Nora Quinn', slug: 'nora_quinn' },
+    { name: 'Rhys Owen', slug: 'rhys_owen' },
+    { name: 'Tess Harper', slug: 'tess_harper' },
+    { name: 'Jude Meyer', slug: 'jude_meyer' },
+    { name: 'Wren Foster', slug: 'wren_foster' },
+    { name: 'Blake Irwin', slug: 'blake_irwin' },
+    { name: 'Cleo Vance', slug: 'cleo_vance' },
+    { name: 'Drew Sato', slug: 'drew_sato' },
+    { name: 'Elle Kim', slug: 'elle_kim' },
+    { name: 'Finn Doyle', slug: 'finn_doyle' },
+    { name: 'Greta Lund', slug: 'greta_lund' },
+    { name: 'Ian Wolfe', slug: 'ian_wolfe' },
+    { name: 'June Park', slug: 'june_park' },
+    { name: 'Kai Mercer', slug: 'kai_mercer' },
+    { name: 'Lena Frost', slug: 'lena_frost' },
+    { name: 'Milo Shaw', slug: 'milo_shaw' },
+    { name: 'Nia Bell', slug: 'nia_bell' },
+    { name: 'Paul Vega', slug: 'paul_vega' },
+    { name: 'Quinn Diaz', slug: 'quinn_diaz' },
+    { name: 'Rosa Yilmaz', slug: 'rosa_yilmaz' }
   ];
 
   var BIOS = [
@@ -1895,6 +2007,23 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
     '纪录片爱好者。\n研究的课题是：人为什么爱刷时间线。',
     '在做一个没几个人知道的小工具。\n进度 60%，焦虑 100%。'
   ];
+
+  /* 帖子正文本地兜底语料：毒鸡汤 API 不可用时使用（风格相近，全部虚构） */
+  var LOCAL_SOUPS = [
+    '努力不一定成功，但不努力真的很轻松。',
+    '你以为自己是限量版，其实只是批量的普通款。',
+    '条条大路通罗马，可有些人就出生在罗马。',
+    '只要我够咸鱼，失败就追不上我。',
+    '别人都有背景，我只有背影。',
+    '世上无难事，只要肯放弃。',
+    '生活不止眼前的苟且，还有远方的苟且。',
+    '机会总是留给有准备的人，可惜我没准备。',
+    '失败并不可怕，可怕的是我还差一点就成功了。',
+    '每天叫醒我的不是梦想，是房东。',
+    '我的钱包就像洋葱，每次打开都让我泪流满面。',
+    '有些事不是我不明白，是我懒得说破。'
+  ];
+  var lastSoupText = '';   // 本次随机写入正文的兜底文案（毒鸡汤到达时仅在其未被用户改动时替换）
 
   // 粉丝数四档：几万 / 几十万 / 百万级 / 千万级 —— 数字要体面，不能小
   var FOLLOWER_TIERS = [[30000, 99999], [100000, 499999], [500000, 1999999], [2000000, 4999999]];
@@ -2192,6 +2321,56 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
       });
   }
 
+  /* 04c. 头像主路：澄曜 API 随机头像（ruseo）
+     ------------------------------------------------------------
+     https://api.ruseo.cn/api-doc/tx 免 Key，返回 JSON：
+       { code:0, data:{ code:200, msg:"https://res.apihz.cn/img/tx/x.jpg" } }
+     该站无 CORS 头，浏览器内跨域 fetch 会被拦截 —— 因此走同源代理：
+       x.jiuyeke.cn 的 Worker 提供 /api/ruseo/tx-img，服务端取图后
+       原样回传图片字节（本页 fetch 同源，无 CORS 问题）。
+     图片必须转 data URL（foreignObject 导出不能加载远程资源，
+     远程图会污染 canvas，toBlob 直接抛安全错误）。
+     本地 file:// / here.now 无该代理 → 404 失败 → 自动回退 DiceBear → 字母占位。
+     ========================================================== */
+  function fetchRuseoAvatar(onOk, onFail) {
+    var done = false;
+    var timer = setTimeout(function () {
+      if (done) return;
+      done = true;
+      onFail('超时');
+    }, 6000);
+
+    fetch('/api/ruseo/tx-img')
+      .then(function (res) {
+        if (!res.ok) throw new Error('代理不可用 HTTP ' + res.status);
+        return res.blob();
+      })
+      .then(function (blob) {
+        if (done) return;
+        var reader = new FileReader();
+        reader.onload = function () {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          avatarRoute = 'ruseo';
+          onOk(reader.result);
+        };
+        reader.onerror = function () {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          onFail('图片读取失败');
+        };
+        reader.readAsDataURL(blob);
+      })
+      .catch(function (e) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        onFail(e && e.message ? e.message : '接口不可用');
+      });
+  }
+
   Array.prototype.forEach.call(avatarModeGroup.querySelectorAll('button'), function (btn) {
     btn.addEventListener('click', function () {
       setAvatarMode(btn.dataset.avatarMode);
@@ -2217,20 +2396,29 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
     avatarRoll.disabled = true;
     avatarHint.textContent = '取图中…';
 
-    fetchAvatarDataUrl(nextAvatarUrl(), function (src) {
+    // 主路：澄曜 API 随机头像（同源代理）；失败回退 DiceBear，再失败字母占位
+    fetchRuseoAvatar(function (src) {
       avatarRoll.disabled = false;
-      // 请求回来时用户可能已经切到别的来源，那就丢弃结果
       if (myId !== avatarReqId || avatarMode !== 'online') return;
       setAvatarImage(src);
       avatarHint.textContent = '已生成 · ' + avatarRoute;
       flash(btn);
-    }, function (reason) {
-      avatarRoll.disabled = false;
-      if (myId !== avatarReqId || avatarMode !== 'online') return;
-      // 失败：退回字母占位 + 一行提示，不白屏不弹窗
-      setAvatarImage('');
-      avatarHint.textContent = '取图失败（' + reason + '），已用字母占位';
-      flash(btn);
+    }, function (ruseoReason) {
+      if (myId !== avatarReqId || avatarMode !== 'online') { avatarRoll.disabled = false; return; }
+      fetchAvatarDataUrl(nextAvatarUrl(), function (src) {
+        avatarRoll.disabled = false;
+        if (myId !== avatarReqId || avatarMode !== 'online') return;
+        setAvatarImage(src);
+        avatarHint.textContent = '已生成 · ' + avatarRoute;
+        flash(btn);
+      }, function (reason) {
+        avatarRoll.disabled = false;
+        if (myId !== avatarReqId || avatarMode !== 'online') return;
+        // 两路都失败：退回字母占位 + 一行提示，不白屏不弹窗
+        setAvatarImage('');
+        avatarHint.textContent = '取图失败（' + ruseoReason + ' → ' + reason + '），已用字母占位';
+        flash(btn);
+      });
     });
   });
 
@@ -2350,6 +2538,32 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
     ageMinutes: 47      // 示例帖固定显示「47分钟前」，讲课时参照稳定
   };
 
+  /* 02.3 帖子正文主路：澄曜 API 毒鸡汤（poison_soup，免 Key）
+     ------------------------------------------------------------
+     https://api.ruseo.cn/api-doc/poison_soup 返回：
+       { code:0, data:{ content:"..." } }
+     走同源代理 /api/ruseo/poison_soup（CF Worker，ruseo 无 CORS 头）。
+     任何失败静默保留本地语料（applyRandom 已先写入兜底文案）；
+     仅当正文仍是本次随机写入的兜底值时才替换，绝不覆盖用户手打内容。
+     ========================================================== */
+  function fetchPoisonSoup() {
+    fetch('/api/ruseo/poison_soup')
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function (j) {
+        var text = j && j.data && j.data.content;
+        if (!text) return;
+        if (bodyInput.value !== lastSoupText) return;   // 用户已改字，不覆盖
+        bodyInput.value = text;
+        lastSoupText = text;
+        render();
+        checkBodyLen();
+      })
+      .catch(function () { /* 静默：保留本地语料 */ });
+  }
+
   function applyRandom() {
     // 昵称 + handle 一起换：handle 由名字的 slug 生成
     // 连点时避免抽到当前这个人（最多重抽 5 次），不然看起来像没反应
@@ -2362,6 +2576,13 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
     var bio = pick(BIOS);
     for (var j = 0; j < 5 && bio === bioInput.value; j++) bio = pick(BIOS);
     bioInput.value = bio;
+
+    // 正文：先落一条本地兜底短句，异步尝试替换为毒鸡汤 API 内容（失败静默保留）
+    var soup = pick(LOCAL_SOUPS);
+    for (var k = 0; k < 5 && soup === bodyInput.value; k++) soup = pick(LOCAL_SOUPS);
+    bodyInput.value = soup;
+    lastSoupText = soup;
+    fetchPoisonSoup();
 
     // 粉丝 / 关注：关注数不超过粉丝数的 70%，避免一眼假
     var followers = randomFollowers();
