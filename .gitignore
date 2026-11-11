@@ -1,0 +1,10 @@
+# 本地运行产物
+test-output/
+logs/
+.herenow/
+node_modules/
+
+# 系统与编辑器
+Thumbs.db
+.DS_Store
+*.tmp

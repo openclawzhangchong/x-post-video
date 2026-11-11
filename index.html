@@ -1,0 +1,3610 @@
+<html lang="zh-CN"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>X 帖子卡片 → 10 秒竖屏视频 · 一键生成</title>
+<!-- 内联 favicon（base64 SVG）：避免浏览器自动请求 /favicon.ico 产生 404，
+     同时保持「单文件、无外链、双击即用」的约定 -->
+<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTQiIGZpbGw9IiMxZDliZjAiLz48dGV4dCB4PSIzMiIgeT0iNDUiIGZvbnQtc2l6ZT0iNDIiIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNmZmYiIGZvbnQtZmFtaWx5PSJBcmlhbCI+WDwvdGV4dD48L3N2Zz4=">
+<style>
+  /* ============================================================
+     00. 全局重置
+     ------------------------------------------------------------
+     box-sizing: border-box 让 padding / border 算进宽度，
+     后面所有百分比和 600px 卡宽都更容易推。
+     ============================================================ */
+  *, *::before, *::after { box-sizing: border-box; }
+  html { height: 100%; }
+  body {
+    margin: 0;
+    min-height: 100%;
+    /* 系统字体栈：不引 CDN，中文在 Windows / macOS 都能落到合适字体 */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+                 "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--page-bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ============================================================
+     01. 主题变量（本页最重要的教学点）
+     ------------------------------------------------------------
+     把「颜色、边框、背景」全部收进自定义属性。
+     切换主题时只改 <body data-theme>，DOM 一个节点都不动，
+     所有颜色顺着 CSS 继承自动换掉。
+
+     这里有两套颜色：
+       --sim-*   被模拟的 X 页面用到的颜色；
+       --tool-*  只想给「编辑器」（工具条 / 编辑面板 / 底部说明）用的颜色。
+     刻意分开，工具才不会越长越像 X 自己的界面。
+     ============================================================ */
+  /* 主题变量挂在 [data-theme] 上而不是写死 body：
+     导出图片时是「克隆卡片塞进 SVG」，那块 DOM 里没有 body，
+     但同样带 data-theme 属性，变量才能照样继承下来。 */
+  [data-theme="dark"] {
+    --page-bg: #0a0e13;
+    --card-bg: #000000;
+    --editor-bg: #10161d;
+    --text: #e7e9ea;
+    --muted: #71767b;
+    --border: #2f3336;
+    --line: #16181c;
+    --hover: #16181c;
+    --input-bg: #0b1016;
+    --input-border: #2f3336;
+    --blue: #1d9bf0;
+    --green: #00ba7c;
+    --pink: #f91880;
+
+    /* 预览底板：比页面底色再深一点，虚线包住，明确「这是被模拟的页面」 */
+    --sim-bg: #05080b;
+    --sim-border: #1e242a;
+    --sim-label: #4d5862;
+    /* X 深色下「关注」是白底黑字 */
+    --btn-primary-bg: #eff3f4;
+    --btn-primary-text: #0f1419;
+  }
+  [data-theme="light"] {
+    --page-bg: #eef1f4;
+    --card-bg: #ffffff;
+    --editor-bg: #ffffff;
+    --text: #0f1419;
+    --muted: #536471;
+    --border: #cfd9de;
+    --line: #eff3f4;
+    --hover: #f7f9f9;
+    --input-bg: #ffffff;
+    --input-border: #d7dde2;
+    --blue: #1d9bf0;
+    --green: #00ba7c;
+    --pink: #f91880;
+
+    --sim-bg: #e5eaef;
+    --sim-border: #c2ccd4;
+    --sim-label: #93a1ab;
+    /* X 浅色下「关注」是黑底白字 */
+    --btn-primary-bg: #0f1419;
+    --btn-primary-text: #ffffff;
+  }
+
+  /* 主题切换时给大面积上色的元素加过渡，避免生硬闪一下 */
+  body, .editor, .post, .profile, .toolbar, input, textarea, .footnotes {
+    transition: background-color .22s ease, color .22s ease, border-color .22s ease;
+  }
+
+  /* ============================================================
+     02. 页面骨架与响应式
+     ------------------------------------------------------------
+     宽屏：两列网格（左侧编辑 / 右侧预览），编辑面板 sticky。
+     窄屏：单列堆叠，卡片占满可读宽度。
+     ============================================================ */
+  .shell {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 32px 32px 64px;
+  }
+
+  /* 页头只写「这是什么工具」，操作说明统一放页面最底部，
+     避免学生把工具说明当成被模拟页面的一部分。 */
+  .page-title { margin-bottom: 24px; }
+  .page-title h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: .04em;
+  }
+  .page-title .kicker {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .18em;
+    color: var(--muted);
+  }
+
+  .app {
+    display: grid;
+    grid-template-columns: 340px minmax(0, 1fr);
+    gap: 44px;
+    align-items: start;
+  }
+
+  @media (max-width: 880px) {
+    .shell { padding: 20px 16px 56px; }
+    .app {
+      grid-template-columns: 1fr;
+      gap: 24px;
+    }
+    .editor { position: static; }
+  }
+
+  /* 宽屏时编辑面板是 sticky 的：面板一旦比视口还高，
+     底部的字段会被顶出屏幕外而且永远滚不到
+     （sticky 元素不会跟着页面滚走）。所以给它限高 + 内部滚动。 */
+  @media (min-width: 881px) {
+    .editor {
+      max-height: calc(100vh - 56px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+  }
+
+  /* ============================================================
+     03. 编辑面板
+     ============================================================ */
+  .editor {
+    position: sticky;
+    top: 28px;
+    display: grid;
+    gap: 18px;
+    padding: 20px;
+    background: var(--editor-bg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+  }
+  .editor-title {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .14em;
+    color: var(--muted);
+  }
+
+  /* 分组：用一条细线把「共用 / 主页 / 帖子」切开，
+     比十几个字段堆在一起好找得多。 */
+  .ed-group {
+    display: grid;
+    gap: 12px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+  .ed-group:first-of-type { padding-top: 0; border-top: 0; }
+  .ed-group-title {
+    margin: 0;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .12em;
+  }
+
+  .field { display: grid; gap: 6px; }
+  .field > label,
+  .group-label {
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: .04em;
+  }
+  .field input[type="text"],
+  .field input[type="number"],
+  .field textarea {
+    width: 100%;
+    font: inherit;
+    font-size: 14px;
+    color: var(--text);
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 10px;
+    padding: 9px 11px;
+    outline: none;
+  }
+  .field input:focus,
+  .field textarea:focus { border-color: var(--blue); }
+
+  .field textarea {
+    resize: vertical;
+    line-height: 1.65;
+    overflow-y: auto;
+  }
+  /* 简介短，3 行就够 */
+  .field textarea.small { min-height: 84px; }
+  /* 正文要写长文：至少 7 行高（14px × 1.65 ≈ 23px/行），
+     再短就会被裁成一小条、看起来像只读预览。 */
+  #bodyInput { min-height: 176px; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 360px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .file-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  /* 头像来源三选一：占满一行、三段等宽 */
+  .avatar-mode { width: 100%; }
+  .avatar-mode button { flex: 1 1 0; }
+  .file-btn,
+  .ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font: inherit;
+    font-size: 12px;
+    padding: 7px 12px;
+    color: var(--text);
+    background: transparent;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .file-btn:hover,
+  .ghost:hover { border-color: var(--blue); color: var(--blue); }
+  .ghost { color: var(--muted); }
+  .hint {
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+  .check-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .check-row input { accent-color: var(--blue); }
+
+  /* ---------- 工具条主按钮 ----------
+     「随机」是整页唯一的随机入口：方角、实心、用文字色（不是 X 的品牌蓝），
+     一眼能看出它属于编辑器，不属于被模拟的帖子页面。 */
+  .toolbar-primary {
+    flex: 0 0 auto;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    color: var(--page-bg);
+    background: var(--text);
+    border: 1px solid var(--text);
+    border-radius: 6px;
+    padding: 8px 20px;
+    cursor: pointer;
+  }
+  .toolbar-primary:hover { opacity: .85; }
+  .toolbar-primary:active { transform: translateY(1px); }
+
+  /* 点击反馈：按钮闪一下，不弹窗、不震动 */
+  .flash { animation: press-flash .4s ease; }
+  @keyframes press-flash {
+    0%   { opacity: .3; }
+    100% { opacity: 1; }
+  }
+
+  /* 时间只读：值由 Date.now() 和「随机 / 恢复示例」决定，
+     不让人直接改文字，避免相对时间和手写日期打架。 */
+  #timeInput { color: var(--muted); cursor: default; }
+
+  /* ============================================================
+     04. 控制工具条（属于编辑器，不属于被模拟的页面）
+     ------------------------------------------------------------
+     三条视觉线索把它和帖子卡彻底分开：
+       1) 方角（6px）+ 细边框的按钮组，不是 X 那种圆角胶囊；
+       2) 控件一律中性灰，激活态也不用 X 的品牌蓝；
+       3) 下面留 26px 空白，再接预览底板。
+     ============================================================ */
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 22px;
+    padding: 12px 14px;
+    background: var(--editor-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .toolbar-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .toolbar-label {
+    font-size: 11px;
+    letter-spacing: .1em;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  /* 分段按钮组：靠边框和底色区分，不靠蓝色主色 */
+  .btn-group {
+    display: inline-flex;
+    border: 1px solid var(--input-border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .btn-group button {
+    font: inherit;
+    font-size: 12px;
+    line-height: 1;
+    color: var(--muted);
+    background: transparent;
+    border: 0;
+    border-left: 1px solid var(--input-border);
+    padding: 7px 12px;
+    cursor: pointer;
+  }
+  .btn-group button:first-child { border-left: 0; }
+  .btn-group button:hover { color: var(--text); background: var(--hover); }
+  .btn-group button.on {
+    color: var(--text);
+    background: var(--hover);
+    font-weight: 600;
+  }
+
+  .toolbar-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+    cursor: pointer;
+    user-select: none;
+    margin-left: auto;
+  }
+  .toolbar-check input { accent-color: var(--muted); }
+
+  /* 导出工具条：单独一排，和上面的演示控制拉开 */
+  .toolbar-export { margin-top: 10px; }
+  .toolbar-note {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* ============================================================
+     05. 预览底板
+     ------------------------------------------------------------
+     极深的底色 + 虚线边框 + 一行小字标签，
+     把「被模拟的页面」包成一块独立区域，
+     和外面的工具条 / 编辑面板分属两层。
+     ============================================================ */
+  .preview {
+    margin-top: 26px;
+    padding: 16px;
+    background: var(--sim-bg);
+    border: 1px dashed var(--sim-border);
+    border-radius: 18px;
+  }
+  .preview-label {
+    display: block;
+    margin: 2px 0 12px;
+    font-size: 10px;
+    letter-spacing: .14em;
+    color: var(--sim-label);
+  }
+
+  .stage { display: flex; flex-direction: column; }
+  .stage-inner { width: 100%; max-width: 600px; margin: 0 auto; }
+
+  /* ============================================================
+     06. 个人主页头部
+     ------------------------------------------------------------
+     这里演示「同一份用户数据，在另一个页面里怎么排」：
+     昵称、handle、认证标和帖子卡共用，简介 / 关注数 / 粉丝数只在主页出现。
+     ============================================================ */
+  .profile {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+
+  .profile-topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .back-btn {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    color: var(--text);
+    background: transparent;
+    border: 0;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  .back-btn svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+  }
+  .back-btn:hover { background: var(--hover); }
+  .topbar-name {
+    display: grid;
+    gap: 1px;
+    min-width: 0;
+  }
+  .topbar-name b {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 21px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .topbar-name span {
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--muted);
+  }
+
+  /* 头像 + 关注按钮同排；align-items:flex-start 让按钮贴顶 */
+  .profile-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 16px 0;
+  }
+  .profile-avatar {
+    flex: 0 0 72px;
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--line);
+    color: var(--text);
+    font-size: 28px;
+    font-weight: 700;
+    user-select: none;
+  }
+  .profile-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  /* X 自己的「关注」按钮就是胶囊 + 反色底：它属于被模拟的页面，
+     所以这里保留原样，和工具条里的方角按钮正好形成对比。 */
+  .follow-btn {
+    flex: 0 0 auto;
+    margin-top: 4px;
+    padding: 7px 16px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--btn-primary-text);
+    background: var(--btn-primary-bg);
+    border: 0;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+
+  .profile-id { padding: 12px 16px 0; }
+  .profile-id .display-name { font-size: 19px; line-height: 25px; }
+  .profile-id .handle { font-size: 14px; }
+  .profile-id .meta-line { margin-top: 2px; }
+
+  .profile-bio {
+    padding: 10px 16px 0;
+    font-size: 15px;
+    line-height: 20px;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+  }
+
+  .profile-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    padding: 12px 16px 16px;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--muted);
+  }
+  .profile-stats b {
+    color: var(--text);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ============================================================
+     07. 帖子卡本体
+     ------------------------------------------------------------
+     卡片只负责底色、圆角和外描边；内部区块全部靠 flex 排列。
+     ============================================================ */
+  .post {
+    width: 100%;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px;
+  }
+
+  .post-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  /* ---------- 7.1 头像 ----------
+     border-radius:50% + 固定宽高 = 圆。
+     图片用 object-fit:cover，任意比例都填满圆形且不变形。
+     没有图片时，同一容器显示昵称首字作为占位。 */
+  .avatar {
+    flex: 0 0 40px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--line);
+    color: var(--text);
+    font-size: 16px;
+    font-weight: 700;
+    user-select: none;
+  }
+  .avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  /* ---------- 7.2 头部：昵称 / 徽章 / handle ----------
+     flex:1 + min-width:0 是关键：
+     没有 min-width:0，弹性子项默认最小宽度是内容宽度，
+     text-overflow:ellipsis 永远不会生效。
+     昵称、handle 各自 nowrap + hidden + ellipsis，
+     长名字只在自己的格子里省略，不会把时间挤走。 */
+  .head-main {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+    padding-top: 1px;
+  }
+  .name-line {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+  .display-name {
+    min-width: 0;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 20px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .badge { display: inline-flex; flex: 0 0 auto; }
+  .badge svg { width: 18px; height: 18px; display: block; }
+  .meta-line {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    min-width: 0;
+    font-size: 14px;
+    line-height: 18px;
+    color: var(--muted);
+  }
+  .handle {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ---------- 7.2b 导出打码：把 @Handle 变成马赛克条 ----------
+     需求：导出的 PNG 可以选择性遮住 Handle，默认不打码。
+
+     为什么状态挂在 .handle 自己身上，而不是 body[data-mask]？
+       导出时是 cloneNode(true) 把卡片克隆进 SVG foreignObject，
+       那块 DOM 里没有 body，凡是依赖祖先状态的选择器都会失效 ——
+       结果就是屏幕上打码了、导出的 PNG 里却漏出真实 Handle。
+       class 会随 cloneNode 一起带走，collectCss() 也会把这条规则
+       内联进导出文档，两边必然一致。这是本功能最容易踩的坑。
+
+     为什么不用 filter: blur()？
+       foreignObject 对 CSS filter 支持不稳（Safari 尤其容易整块空白），
+       用「透明文字 + 渐变背景」这类普通 CSS 最保险。
+
+     为什么只改颜色不改 width / font-size / display？
+       打码前后排版必须完全一致，否则学生会误以为打码改变了布局。
+     ------------------------------------------------------------ */
+  .handle.is-masked {
+    color: transparent !important;
+    background: repeating-linear-gradient(90deg,
+        var(--muted) 0 7px, var(--border) 7px 14px);
+    border-radius: 3px;
+    box-shadow: 0 0 0 1px var(--muted);
+  }
+  .meta-dot { flex: 0 0 auto; }
+  .post-time { flex: 0 0 auto; white-space: nowrap; }
+
+  /* ============================================================
+     07.3 正文
+     ------------------------------------------------------------
+     white-space: pre-wrap：
+       - 保留换行（像 <pre>）；
+       - 但超长行会正常折行（<pre> 不会）。
+     配合 overflow-wrap:break-word，长 URL / 中英混排也不会撑破卡片。
+     ============================================================ */
+  .post-body {
+    margin: 10px 0 0 52px;   /* 52px = 头像 40 + 间距 12，和昵称对齐 */
+    font-size: 15px;
+    line-height: 20px;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+  }
+
+  /* ============================================================
+     08. 配图位
+     ------------------------------------------------------------
+     没有图片时整个容器 hidden，卡片自然收起，不留空白占位。
+     有图时固定 16:9 + object-fit:cover，任何原图都不撑破布局。
+     ============================================================ */
+  .post-media {
+    margin: 12px 0 0 52px;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    aspect-ratio: 16 / 9;
+  }
+  .post-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  [hidden] { display: none !important; }
+
+  /* ============================================================
+     09. 互动行
+     ------------------------------------------------------------
+     六个按钮等距排开；数字用 tabular-nums，
+     数字变化时宽度不变，整行不会左右抖动。
+     图标全部是内联 SVG：可随 currentColor 变色、可缩放、无需额外请求。
+     ============================================================ */
+  .post-actions {
+    display: flex;
+    justify-content: space-between;
+    max-width: 460px;
+    margin: 12px 0 0 52px;
+    color: var(--muted);
+  }
+  .action {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 2px;
+    font: inherit;
+    font-size: 13px;
+    line-height: 18px;
+    color: inherit;
+    background: none;
+    border: 0;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .action svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+  }
+  .action:hover { color: var(--blue); }
+  .action-repost:hover { color: var(--green); }
+  .action-like:hover { color: var(--pink); }
+  .action-bookmark:hover { color: var(--blue); }
+  .count { font-variant-numeric: tabular-nums; }
+
+  /* ============================================================
+     10. 结构标注（讲课时用）
+     ------------------------------------------------------------
+     打开 body.annotate 后：
+       1) 每个 [data-region] 加虚线描边；
+       2) ::after 用 attr(data-region) 自动读取中文标签，
+          不需要在 JS 里为每个区块手写一段文字。
+     每种区域只用一个 --region-color 变量区分颜色。
+     ============================================================ */
+  .region { position: relative; }
+  .r-topbar  { --region-color: #9aa7b4; }
+  .r-avatar  { --region-color: #ffb703; }
+  .r-head    { --region-color: #1d9bf0; }
+  .r-body    { --region-color: #00ba7c; }
+  .r-media   { --region-color: #c471ed; }
+  .r-actions { --region-color: #ff7a59; }
+
+  body.annotate .region {
+    outline: 1.5px dashed var(--region-color);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+  body.annotate .region::after {
+    content: attr(data-region);
+    position: absolute;
+    top: -13px;
+    left: 0;
+    z-index: 3;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: .04em;
+    white-space: nowrap;
+    color: #08131f;
+    background: var(--region-color);
+    padding: 3px 6px;
+    border-radius: 3px;
+    pointer-events: none;
+  }
+  /* 头部区在头像右侧，标签放右上角，避免和「头像区」重叠 */
+  body.annotate .r-head::after { left: auto; right: 0; }
+
+  /* 标签默认挂在区域上方 13px 处。主页和帖子的文字区块排得很密，
+     开标注时给这几块补一点上边距，否则标签会盖住上一行文字。
+     只在标注模式下生效，不影响平时看到的排版。 */
+  body.annotate .profile-bio,
+  body.annotate .post-body { margin-top: 26px; }
+  body.annotate .profile-stats { margin-top: 16px; }
+  body.annotate .post-actions { margin-top: 28px; }
+
+  /* ============================================================
+     11. 底部说明
+     ------------------------------------------------------------
+     所有操作说明 / 教学提示集中放到页面最底部，
+     和固定声明排在一起、同款小灰字。
+     放到顶部学生会误以为那是被模拟页面的一部分。
+     ============================================================ */
+  .footnotes {
+    max-width: 720px;
+    margin: 40px auto 0;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    line-height: 1.8;
+    letter-spacing: .02em;
+    text-align: center;
+    color: var(--muted);
+  }
+  .footnotes p { margin: 0 0 3px; }
+  .footnotes code {
+    font-size: 11px;
+    background: var(--line);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  .disclaimer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 9;
+    padding: 7px 12px;
+    font-size: 11px;
+    letter-spacing: .06em;
+    text-align: center;
+    color: var(--muted);
+    background: var(--page-bg);
+    border-top: 1px solid var(--border);
+  }
+  .shell { padding-bottom: 76px; }  /* 给固定页脚留出安全距离 */
+
+  @media (max-width: 420px) {
+    .post { padding: 14px; }
+    /* 正文缩进保持 52px（头像 40 + 间距 12），换行后仍与昵称对齐 */
+    .preview { padding: 10px; }
+    .profile { border-radius: 14px; }
+  }
+
+  /* ============================================================
+     12. 翻译演示卡（v1.1.0 新增 · 纯追加段）
+     ------------------------------------------------------------
+     本段所有选择器一律 tr- 前缀，且不复用 / 不覆盖上面任何现有规则：
+       1) 现有帖子卡、主页卡、工具条、导出逻辑一行都不改；
+       2) 颜色全部引用现有主题变量，主题切换自动跟随；
+       3) 结构标注用独立的 .tr-region / .tr-r-*，不挤进现有配色；
+       4) 新卡是 #postCard 的兄弟节点，不进 buildExportSvg 的 clones，
+          所以「帖子卡」「主页+帖子」两档 PNG 与旧版完全一致。
+     ============================================================ */
+  .tr-card {
+    width: 100%;
+    margin-top: 16px;                 /* 像时间线里的下一条帖子 */
+    padding: 16px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+  }
+
+  /* ---------- 12.1 头部：与现有帖子同款排布，但类名独立 ---------- */
+  .tr-head { display: flex; align-items: flex-start; gap: 12px; }
+
+  .tr-avatar {
+    flex: 0 0 40px;
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--line);
+    color: var(--text);
+    font-size: 16px; font-weight: 700;
+    user-select: none;
+  }
+  .tr-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  .tr-head-main { flex: 1; min-width: 0; display: grid; gap: 2px; padding-top: 1px; }
+  .tr-name-line { display: flex; align-items: center; gap: 4px; min-width: 0; }
+  .tr-name {
+    min-width: 0;
+    font-size: 15px; font-weight: 700; line-height: 20px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tr-badge { display: inline-flex; flex: 0 0 auto; }
+  .tr-badge svg { width: 18px; height: 18px; display: block; }
+  .tr-meta-line {
+    display: flex; align-items: baseline; gap: 4px; min-width: 0;
+    font-size: 14px; line-height: 18px; color: var(--muted);
+  }
+  .tr-handle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tr-time { flex: 0 0 auto; white-space: nowrap; }
+
+  /* ---------- 12.2 正文 / 译文 / 翻译控件 ---------- */
+  .tr-body {
+    margin: 10px 0 0 52px;           /* 52px = 头像 40 + 间距 12，和昵称对齐 */
+    font-size: 15px; line-height: 20px;
+    white-space: pre-wrap; overflow-wrap: break-word;
+  }
+
+  /* 蓝色文字链接：X 里「翻译帖子 / 显示原文」都是这种无边框蓝色链接 */
+  .tr-link {
+    display: inline-block;
+    margin: 10px 0 0 52px;
+    padding: 0;
+    font: inherit; font-size: 14px;
+    color: var(--blue);
+    background: none; border: 0;
+    cursor: pointer;
+  }
+  .tr-link:hover { text-decoration: underline; }
+
+  /* 经典版展开后的译文盒：左侧竖线 + 浅底，和原文在视觉上分层 */
+  .tr-translated {
+    margin: 12px 0 0 52px;
+    padding: 10px 12px;
+    background: var(--hover);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--blue);
+    border-radius: 0 10px 10px 0;
+  }
+  .tr-credit {
+    margin: 0 0 6px;
+    font-size: 12px; line-height: 16px; color: var(--muted);
+  }
+  .tr-translated-text {
+    font-size: 15px; line-height: 20px;
+    white-space: pre-wrap; overflow-wrap: break-word;
+  }
+
+  /* 2026 自动版：顶部一条「翻译自英语」+「显示原文」 */
+  .tr-auto-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
+    margin: 12px 0 0 52px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+    font-size: 13px; color: var(--muted);
+  }
+  .tr-auto-bar .tr-link { margin: 0; font-size: 13px; }
+
+  /* ---------- 12.3 互动行：与现有帖子卡同款（6 个操作 + 5 个数字） ----------
+         数字不写死，由 10.9 从左侧 5 个输入框实时同步；
+         宽度 / 字号 / 悬停色全部对齐现有 .post-actions，视觉上就是同一条时间线。 */
+  .tr-actions {
+    display: flex; justify-content: space-between;
+    max-width: 460px; margin: 12px 0 0 52px;
+    color: var(--muted);
+  }
+  .tr-action {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 2px;
+    font: inherit; font-size: 13px; line-height: 18px;
+    color: inherit; background: none; border: 0; border-radius: 8px;
+    cursor: pointer;
+  }
+  .tr-action svg {
+    width: 18px; height: 18px;
+    fill: none; stroke: currentColor; stroke-width: 1.6;
+  }
+  .tr-action:hover { color: var(--blue); }
+  .tr-action-repost:hover { color: var(--green); }
+  .tr-action-like:hover { color: var(--pink); }
+  .tr-action-bookmark:hover { color: var(--blue); }
+  .tr-count { font-variant-numeric: tabular-nums; }
+
+  /* ---------- 12.4 结构标注：独立一套色，不改现有 .region ---------- */
+  .tr-region { position: relative; }
+  .tr-r-head    { --tr-region-color: #60a5fa; }
+  .tr-r-orig    { --tr-region-color: #34d399; }
+  .tr-r-trans   { --tr-region-color: #c084fc; }
+  .tr-r-actions { --tr-region-color: #fb923c; }
+  body.annotate .tr-region {
+    outline: 1.5px dashed var(--tr-region-color);
+    outline-offset: 3px; border-radius: 6px;
+  }
+  body.annotate .tr-region::after {
+    content: attr(data-region);
+    position: absolute; top: -13px; left: 0; z-index: 3;
+    font-size: 10px; font-weight: 700; line-height: 1; letter-spacing: .04em;
+    white-space: nowrap; color: #08131f;
+    background: var(--tr-region-color);
+    padding: 3px 6px; border-radius: 3px; pointer-events: none;
+  }
+  body.annotate .tr-r-head::after { left: auto; right: 0; }
+  body.annotate .tr-body,
+  body.annotate .tr-translated,
+  body.annotate .tr-actions { margin-top: 26px; }
+
+  /* ---------- 12.5 左侧新增的形态切换按钮组：占满一行、两段等宽 ---------- */
+  .tr-mode-group { width: 100%; }
+  .tr-mode-group button { flex: 1 1 0; }
+
+  @media (max-width: 420px) {
+    .tr-card { padding: 14px; }
+  }
+
+  /* ============================================================
+     13 / 14. 分组导航折叠 + 受限就地编辑（v1.2.0 新增 · 纯追加段）
+     ------------------------------------------------------------
+     继续遵守本页「不许改旧代码」的纪律：
+       · 新选择器一律 nv- / ie- 前缀，旧规则一行不改；
+       · 折叠状态、编辑开关状态都挂在 body 上（body.nv-on / body.ie-on），
+         而导出的克隆 DOM 里没有 body —— 这些状态天然不会进 PNG；
+       · 就地编辑的浮层挂在 body 下，buildExportSvg() 只克隆两张旧卡，
+         浮层也不在克隆列表里。
+     ============================================================ */
+
+  /* ---------- 13.1 吸顶分组导航条 ---------- */
+  .nv-bar {
+    position: sticky; top: 0; z-index: 5;
+    align-self: start;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    margin: -2px 0 0; padding: 8px 0 10px;
+    background: var(--editor-bg);
+    border-bottom: 1px solid var(--line);
+  }
+  .nv-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; width: 100%; }
+  .nv-btn {
+    font: inherit; font-size: 12px; line-height: 1;
+    color: var(--muted);
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    cursor: pointer;
+  }
+  .nv-btn:hover { color: var(--text); background: var(--hover); }
+  .nv-btn.on { color: var(--text); background: var(--hover); border-color: var(--blue); }
+  .nv-all { margin-left: auto; }
+
+  /* ---------- 13.2 折叠：只隐藏标题以外的直接子元素 ---------- */
+  body.nv-on .ed-group-title { cursor: pointer; user-select: none; }
+  body.nv-on .ed-group-title::after {
+    content: '-'; float: right; font-size: 13px; color: var(--muted);
+  }
+  body.nv-on .ed-group.nv-collapsed .ed-group-title::after { content: '+'; }
+  body.nv-on .ed-group.nv-collapsed > :not(.ed-group-title) { display: none; }
+  body.nv-on .ed-group.nv-collapsed { gap: 0; }
+
+  /* ---------- 14.1 就地编辑开关（放在导航条里，不动任何工具条） ---------- */
+  .ie-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    width: 100%;
+    font-size: 11px; color: var(--muted);
+    cursor: pointer; user-select: none;
+  }
+  .ie-toggle input { accent-color: var(--muted); }
+
+  /* 双击提示只在开关打开时出现；规则带 body.ie-on 前缀，
+     导出克隆的 DOM 没有 body，所以虚线框不会画进 PNG（第 6 课的再次应用） */
+  body.ie-on #postBody,
+  body.ie-on #trTranslatedClassic,
+  body.ie-on #trAutoBody {
+    outline: 1px dashed var(--blue);
+    outline-offset: 3px;
+    border-radius: 3px;
+    cursor: text;
+  }
+
+  /* ---------- 14.2 编辑浮层：挂在 body 下，不是卡片子节点 ---------- */
+  .ie-overlay {
+    position: fixed; z-index: 60; box-sizing: border-box;
+    background: var(--card-bg);   /* 不透明，隔离卡片底层内容 */
+    border-radius: 6px;
+  }
+  .ie-textarea {
+    display: block; width: 100%; height: calc(100% - 22px);
+    box-sizing: border-box; resize: none;
+    font: inherit; font-size: 14px; line-height: 1.5;
+    color: var(--text); background: var(--input-bg);
+    border: 2px solid var(--blue); border-radius: 6px;
+    padding: 6px 8px;
+    white-space: pre-wrap; overflow-wrap: break-word;
+    outline: none;
+  }
+  .ie-tip {
+    /* 整宽贴在浮层内部底边：不透明背景盖住身后的互动行，
+       避免窄条提示与卡片数字叠在一起变成视觉噪音 */
+    position: absolute; left: 0; right: 0; bottom: 0;
+    box-sizing: border-box;
+    font-size: 11px; line-height: 1.4;
+    color: var(--muted); background: var(--page-bg);
+    border: 1px solid var(--border); border-top: 0;
+    border-radius: 0 0 4px 4px;
+    padding: 2px 8px; white-space: nowrap;
+    pointer-events: none;
+  }
+
+  /* ============================================================
+     15. v1.2.1 窄屏横向溢出修复（纯追加，旧规则一行不动）
+     ------------------------------------------------------------
+     现象：375 竖屏下 documentElement.scrollWidth = 380，比 clientWidth
+     多 5px，页面能左右晃动；360 下更明显（多 20px）。
+     根因：@media (max-width:880px) 里 .app 写的是 1fr，而 1fr 的最小
+     尺寸是 auto（= min-content）。编辑面板 / 工具条 / 预览底板里最宽的
+     一行内容把单列轨道撑到 364px，比 .shell 的可用宽度 343px 还宽，
+     于是整列右边界顶到 380px —— 溢出的是「轨道」，不是某个元素。
+     修法：minmax(0, 1fr) 允许轨道收缩到 0；再给 .app 的直接子项
+     .editor / .stage 与 .preview 加 min-width:0，挡住 grid item 默认
+     min-width:auto 的二次撑开。
+     为什么敢这么改（四条护栏）：
+       ① 规则放在样式表最后，v1.0.1 的 122 条旧 CSS 一条不改；
+       ② 是 @media，collectCss() 会跳过 MEDIA_RULE，不进导出 SVG；
+       ③ 只在 ≤880px 生效，≥881px 仍是 340px minmax(0,1fr) 两列；
+       ④ 实测 414 / 768 / 1024 / 1440 的网格列宽与改前完全一致。
+     ============================================================ */
+  @media (max-width: 880px) {
+    .app { grid-template-columns: minmax(0, 1fr); }
+    .editor, .stage, .preview { min-width: 0; }
+  }
+
+  /* ============================================================
+     16. v2.0.0 简易/专家双模式（纯追加段）
+     ------------------------------------------------------------
+     纪律 1：所有「隐藏/换肤」规则一律带 body.simple-mode 前缀 ——
+       导出 PNG 时克隆 DOM 挂在 holder 下（没有 body），
+       这些规则永不命中克隆，屏幕隐藏不会渗进导出图。
+     纪律 2：只动 class 与文案，元素与 JS 管线零改动，
+       专家模式 = v1.x 行为一字不差。
+     ============================================================ */
+  body.simple-mode .adv-only { display: none !important; }
+  body:not(.simple-mode) .simple-only { display: none !important; }
+  /* 简易模式下分组不可折叠，隐藏标题上的 +/- 折叠符号 */
+  body.simple-mode .ed-group-title { cursor: default; }
+  body.simple-mode .ed-group-title::after { display: none; }
+
+  /* 页头：标题 + 模式切换同行（两种模式都显示切换器） */
+  .page-title {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px 16px;
+    flex-wrap: wrap;
+  }
+  .mode-switch {
+    display: inline-flex;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    overflow: hidden;
+    flex: 0 0 auto;
+  }
+  .mode-switch button {
+    font: inherit;
+    font-size: 13px;
+    line-height: 1;
+    color: var(--muted);
+    background: transparent;
+    border: 0;
+    border-left: 1px solid var(--input-border);
+    padding: 8px 14px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .mode-switch button:first-child { border-left: 0; }
+  .mode-switch button:hover { color: var(--text); background: var(--hover); }
+  .mode-switch button.on {
+    color: var(--text);
+    background: var(--hover);
+    font-weight: 600;
+  }
+
+  /* 新手引导条（仅简易模式） */
+  .onboard {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+    padding: 10px 14px;
+    background: var(--hover);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text);
+  }
+  .onboard b { color: var(--blue); }
+  .onboard-close {
+    margin-left: auto;
+    flex: 0 0 auto;
+    font: inherit;
+    font-size: 12px;
+    color: var(--muted);
+    background: none;
+    border: 0;
+    cursor: pointer;
+    padding: 2px 6px;
+    white-space: nowrap;
+  }
+  .onboard-close:hover { color: var(--text); }
+
+  /* 简易模式：生成按钮是唯一主行动，绿底放大 */
+  /* 简易模式：主题组搬入导出工具条后，预览工具条成空壳，直接隐藏 */
+  body.simple-mode .toolbar:not(.toolbar-export) { display: none !important; }
+  body.simple-mode #exportBtn {
+    background: var(--green);
+    color: #fff;
+    border-color: var(--green);
+    font-size: 14px;
+    padding: 10px 22px;
+  }
+  body.simple-mode #exportBtn:hover { opacity: .9; }
+
+  /* 正文过长提醒（两模式通用） */
+  #bodyLenHint {
+    margin: 4px 0 0;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #e6a700;
+    display: none;
+  }
+  [data-theme="light"] #bodyLenHint { color: #9a6b00; }
+
+  /* ============================================================
+     17. v2.1 窄屏互动行溢出修复（纯追加）
+     ------------------------------------------------------------
+     现象：360~430px 视口下帖子卡互动行 6 个按钮（回复/转推/点赞/
+     查看/收藏/分享）放不下，把卡片撑破，页面横向溢出 57px。
+     根因：.post-actions 用 space-between 且不许换行，6 按钮的
+     min-content 宽度（图标18+数字+padding）> 窄屏卡片内容宽。
+     v1.2.1 只修了网格轨道溢出，没管卡内互动行。
+     修法：≤480px 时收窄图标 18→16、数字字号 13→12、间距压缩。
+     @media 规则 collectCss() 会跳过，不进导出 SVG。
+     ============================================================ */
+  @media (max-width: 480px) {
+    .post-actions, .tr-actions { gap: 0 4px; max-width: none; }
+    .action, .tr-action { gap: 3px; padding: 4px 0; }
+    .action svg, .tr-action svg { width: 16px; height: 16px; }
+    .count, .tr-count { font-size: 12px; }
+    .post-media { margin-left: 0; }
+    .post-body { margin-left: 0; }
+  }
+</style>
+<meta property="og:title" content="X Post Editor Frontend Teaching Demo">
+<meta property="og:description" content="A frontend teaching tool that simulates an X post page with real-time editing, theme switching, and image export capabilities.">
+<meta property="og:url" content="https://frosty-lichen-w688.here.now/">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://here.now/og/frosty-lichen-w688.jpg">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="720">
+<meta name="twitter:image" content="https://here.now/og/frosty-lichen-w688.jpg">
+<meta name="twitter:card" content="summary_large_image"></head>
+<body data-theme="dark" class="nv-on">
+<!-- 防闪烁：在解析到样式前先挂模式 class（默认简易模式，localStorage 记忆） -->
+<script>try{if(localStorage.getItem('pv-mode')!=='expert')document.body.classList.add('simple-mode');}catch(e){document.body.classList.add('simple-mode')}</script>
+<main class="shell">
+  <header class="page-title">
+    <div>
+      <span class="kicker">POST → VIDEO</span>
+      <h1>X 帖子卡片 · 一键生成 10 秒竖屏视频</h1>
+    </div>
+    <div class="mode-switch" role="group" aria-label="操作模式">
+      <button type="button" data-mode-btn="simple">🌱 简易</button>
+      <button type="button" data-mode-btn="expert">🧑‍💻 专家</button>
+    </div>
+  </header>
+
+  <!-- 新手引导条：只在简易模式显示，可关闭并记忆 -->
+  <div class="onboard simple-only" id="onboardBar" hidden>
+    <span>🌱 <b>简易模式</b>：① 左侧填写<b>正文</b> → ② 点「<b>🎬 生成视频</b>」→ ③ 视频卡里点「<b>⬇ 下载视频</b>」（可先选 🎵 背景音乐）</span>
+    <button class="onboard-close" id="onboardClose" type="button">知道了</button>
+  </div>
+
+  <div class="app">
+    <!-- ==========================================================
+         编辑面板：所有输入只改右侧预览里的文案 / 数字 / 图片，
+         不改 DOM 结构，方便课堂上对照「数据 → 视图」。
+         昵称 / handle / 认证三份数据同时喂给「主页头部」和「帖子卡」，
+         这是这一版新增的教学点：一份数据，两个页面。
+         ========================================================== -->
+    <aside class="editor" aria-label="编辑面板">
+      <h2 class="editor-title">编辑面板</h2>
+
+      <!-- ===== v1.2.0 新增：分组导航 + 就地编辑开关（纯追加，不动任何旧节点） =====
+           用 <div> 而不是 <section>：旧版回归脚本按 .editor > section 计数，
+           导航条与开关都不属于「编辑分组」，不该被算进去。
+           就地编辑开关刻意不放进任何 .toolbar —— 两条工具条的 outerHTML 是
+           「现有零改动」的对比项，放进去了会破坏基线。 -->
+      <div class="nv-bar adv-only" id="nvBar">
+        <div class="nv-row">
+          <button class="nv-btn" type="button" data-nv-target="0">共用</button>
+          <button class="nv-btn" type="button" data-nv-target="1">主页</button>
+          <button class="nv-btn" type="button" data-nv-target="2">帖子</button>
+          <button class="nv-btn" type="button" data-nv-target="3">翻译</button>
+          <button class="nv-btn nv-all" type="button" id="nvToggleAll">全部收起</button>
+        </div>
+        <label class="ie-toggle" title="打开后，双击帖子正文或翻译卡译文可直接改字；默认关闭">
+          <input id="ieToggle" type="checkbox">
+          卡片就地编辑（双击正文 / 译文直接改）
+        </label>
+      </div>
+
+      <section class="ed-group nv-collapsed">
+        <h3 class="ed-group-title">共用信息</h3>
+
+        <div class="field adv-only">
+          <span class="group-label">头像来源</span>
+          <!-- 三选一：字母占位 / 本地上传 / 在线生成 -->
+          <div class="btn-group avatar-mode" id="avatarModeGroup" role="group" aria-label="头像来源">
+            <button type="button" data-avatar-mode="letter" class="on">字母占位</button>
+            <button type="button" data-avatar-mode="upload">本地上传</button>
+            <button type="button" data-avatar-mode="online">在线生成</button>
+          </div>
+
+          <div class="file-line" id="avatarUploadRow" hidden="">
+            <!-- 隐藏原生 file 控件，用 label 包一个按钮样式，保证各浏览器外观一致 -->
+            <label class="file-btn">
+              选择图片
+              <input id="avatarFile" type="file" accept="image/*" hidden="">
+            </label>
+            <button class="ghost" id="avatarClear" type="button">清除</button>
+          </div>
+
+          <div class="file-line" id="avatarOnlineRow" hidden="">
+            <button class="ghost" id="avatarRoll" type="button">换一个</button>
+            <span class="hint" id="avatarHint"></span>
+          </div>
+
+          <p class="hint" id="avatarDesc">未上传时用昵称首字占位；一张图同时用于主页和帖子卡。</p>
+        </div>
+
+        <div class="field">
+          <label for="nameInput">昵称</label>
+          <input id="nameInput" type="text" value="林知远" spellcheck="false">
+        </div>
+        <div class="adv-only">
+          <div class="field">
+            <label for="handleInput">Handle</label>
+            <input id="handleInput" type="text" value="lin_zhiyuan" spellcheck="false">
+          </div>
+        </div>
+
+        <label class="check-row adv-only">
+          <input id="verifiedToggle" type="checkbox" checked="">
+          显示认证徽章
+        </label>
+      </section>
+
+      <section class="ed-group nv-collapsed adv-only">
+        <h3 class="ed-group-title">主页头部</h3>
+
+        <div class="field">
+          <label for="bioInput">简介</label>
+          <textarea id="bioInput" class="small" rows="3" spellcheck="false">前端老师。拆页面，也拆问题。
+平时写教学用的 HTML/CSS 小例子。</textarea>
+          <p class="hint">回车换行同样保留。</p>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label for="followingCount">关注数</label>
+            <input id="followingCount" type="number" min="0" step="1" value="128">
+          </div>
+          <div class="field">
+            <label for="followersCount">粉丝数</label>
+            <input id="followersCount" type="number" min="0" step="1" value="12000">
+          </div>
+        </div>
+        <p class="hint">填原始数字；超过 1 万会自动写成「1.2万」，跟 X 的显示规则一致。</p>
+      </section>
+
+      <section class="ed-group">
+        <h3 class="ed-group-title">帖子</h3>
+
+        <div class="field adv-only">
+          <label for="timeInput">发布时间</label>
+          <!-- 只读：值由 Date.now() 与「随机 / 恢复示例」决定，卡片按相对时间显示 -->
+          <input id="timeInput" type="text" readonly="" aria-describedby="timeHint">
+          <p class="hint" id="timeHint">2026-11-11 20:39 · 卡片按相对时间显示</p>
+        </div>
+
+        <div class="field">
+          <label for="bodyInput">正文（支持换行）</label>
+          <textarea id="bodyInput" rows="7" spellcheck="false">大多数人不会去搜索。
+
+X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行。
+同一个 DOM，换一套 CSS 变量，就是另一套主题。</textarea>
+          <p class="hint">点进来直接打字即可，回车换行会原样保留在右侧卡片上。</p>
+        </div>
+
+        <div class="field adv-only">
+          <span class="group-label">互动数字</span>
+          <div class="grid-2">
+            <div class="field">
+              <label for="replyCount">回复</label>
+              <input id="replyCount" type="number" min="0" step="1" value="12">
+            </div>
+            <div class="field">
+              <label for="repostCount">转推</label>
+              <input id="repostCount" type="number" min="0" step="1" value="86">
+            </div>
+            <div class="field">
+              <label for="likeCount">点赞</label>
+              <input id="likeCount" type="number" min="0" step="1" value="1204">
+            </div>
+            <div class="field">
+              <label for="viewCount">查看</label>
+              <input id="viewCount" type="number" min="0" step="1" value="8650">
+            </div>
+            <div class="field">
+              <label for="bookmarkCount">书签</label>
+              <input id="bookmarkCount" type="number" min="0" step="1" value="34">
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="group-label">帖子配图（可留空）</span>
+          <div class="file-line">
+            <label class="file-btn">
+              上传配图
+              <input id="mediaFile" type="file" accept="image/*" hidden="">
+            </label>
+            <button class="ghost" id="mediaClear" type="button">移除</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== v1.1.0 新增：翻译卡编辑区（纯追加，不改上面任何字段） =====
+           两栏都能直接打字；形态切换是 GUI 按钮组，不写代码 / 不改配置。 -->
+      <section class="ed-group adv-only">
+        <h3 class="ed-group-title">翻译卡（新增）</h3>
+
+        <div class="field">
+          <span class="group-label">演示形态</span>
+          <div class="btn-group tr-mode-group" id="trModeGroup" role="group" aria-label="翻译卡形态">
+            <button type="button" data-tr-mode="classic" class="on">经典手动版</button>
+            <button type="button" data-tr-mode="auto">2026 自动版</button>
+          </div>
+          <p class="hint">经典：正文下方「翻译帖子」，点开才出译文；自动：译文默认显示，可切「显示原文」。</p>
+        </div>
+
+        <div class="field">
+          <label for="trOriginalInput">英文原文</label>
+          <textarea id="trOriginalInput" rows="4" spellcheck="false">Most people never search. X's post page looks complex, but it breaks down into just three parts: header, body, and actions.</textarea>
+        </div>
+
+        <div class="field">
+          <label for="trTranslatedInput">中文译文</label>
+          <textarea id="trTranslatedInput" rows="4" spellcheck="false">大多数人不会去搜索。X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行。</textarea>
+        </div>
+        <p class="hint">两栏都能直接改，右侧翻译卡实时同步；翻译卡不进入「导出图片」的 PNG。</p>
+      </section>
+    </aside>
+
+    <!-- ==========================================================
+         演示区：工具条（编辑器） + 预览底板（被模拟的页面）
+         ========================================================== -->
+    <section class="stage">
+      <div class="stage-inner">
+
+        <!-- 工具条一：演示控制。
+             「随机」是这一排的主按钮：一次换掉整页数据。
+             方角按钮组 + 中性灰，刻意不用 X 的胶囊和品牌蓝。 -->
+        <div class="toolbar" role="group" aria-label="预览控制">
+          <button class="toolbar-primary adv-only" id="rollBtn" type="button">随机</button>
+          <button class="ghost adv-only" id="resetBtn" type="button">恢复示例</button>
+
+          <div class="toolbar-group adv-only">
+            <span class="toolbar-label">显示</span>
+            <div class="btn-group" role="group" aria-label="切换预览内容">
+              <button type="button" data-view-btn="all" class="on">全部</button>
+              <button type="button" data-view-btn="profile">主页头部</button>
+              <button type="button" data-view-btn="post">帖子卡</button>
+            </div>
+          </div>
+
+          <div class="toolbar-group">
+            <span class="toolbar-label">主题</span>
+            <div class="btn-group" role="group" aria-label="主题切换">
+              <button type="button" data-theme-btn="dark" class="on">深色</button>
+              <button type="button" data-theme-btn="light">浅色</button>
+            </div>
+          </div>
+
+          <label class="toolbar-check adv-only">
+            <input id="annotateToggle" type="checkbox">
+            区域高亮
+          </label>
+        </div>
+
+        <!-- 工具条二：导出图片。单独一排，
+             和上面的演示控制区分开，避免一行塞太多控件。 -->
+        <div class="toolbar toolbar-export" role="group" aria-label="导出设置">
+          <button class="toolbar-primary" id="exportBtn" type="button">导出图片</button>
+
+          <div class="toolbar-group adv-only">
+            <span class="toolbar-label">范围</span>
+            <div class="btn-group" role="group" aria-label="导出范围">
+              <button type="button" data-export-range="post" class="on">帖子卡</button>
+              <button type="button" data-export-range="both">主页+帖子</button>
+            </div>
+          </div>
+
+          <div class="toolbar-group adv-only">
+            <span class="toolbar-label">边距</span>
+            <div class="btn-group" role="group" aria-label="导出边距">
+              <button type="button" data-pad="32">32</button>
+              <button type="button" data-pad="48" class="on">48</button>
+              <button type="button" data-pad="64">64</button>
+            </div>
+          </div>
+
+          <!-- 导出打码开关：默认不勾选（无 checked），勾选后预览与 PNG 同步生效 -->
+          <label class="toolbar-check adv-only" title="勾选后，预览和导出的 PNG 都会把 @Handle 遮成马赛克；默认关闭">
+            <input id="maskHandleToggle" type="checkbox">
+            Handle 打码
+          </label>
+
+          <span class="toolbar-note" id="exportNote">PNG · 2 倍</span>
+        </div>
+
+        <!-- 预览底板：虚线包住，明确「下面这一块是被模拟的页面」 -->
+        <div class="preview">
+          <span class="preview-label">预览区 · 以下为被模拟的页面</span>
+
+          <!-- ================= 个人主页头部 ================= -->
+          <section class="profile" id="profileCard" aria-label="个人主页头部">
+            <div class="profile-topbar region r-topbar" data-region="返回栏">
+              <button class="back-btn" type="button" aria-label="返回">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M20 12H4M4 12l6-6M4 12l6 6"></path>
+                </svg>
+              </button>
+              <div class="topbar-name">
+                <b id="profileTopName">林知远</b>
+                <span>主页</span>
+              </div>
+            </div>
+
+            <div class="profile-head">
+              <div class="profile-avatar region r-avatar" data-region="大头像">
+                <img id="profileAvatarImg" alt="" hidden="">
+                <span id="profileAvatarLetter">林</span>
+              </div>
+              <button class="follow-btn" type="button">关注</button>
+            </div>
+
+            <div class="profile-id region r-head" data-region="昵称/认证">
+              <div class="name-line">
+                <span class="display-name" id="profileName">林知远</span>
+                <span class="badge" id="profileBadge" aria-label="已认证">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path fill="#1d9bf0" d="M22.25 12c0-1.43-.88-2.67-2.19-3.34.46-1.39.2-2.9-.81-3.91s-2.52-1.27-3.91-.81c-.66-1.31-1.91-2.19-3.34-2.19s-2.67.88-3.33 2.19c-1.4-.46-2.91-.2-3.92.81s-1.26 2.52-.8 3.91c-1.31.67-2.2 1.91-2.2 3.34s.89 2.67 2.2 3.34c-.46 1.39-.21 2.9.8 3.91s2.52 1.26 3.91.81c.67 1.31 1.91 2.19 3.34 2.19s2.67-.88 3.34-2.19c1.39.45 2.9.2 3.91-.81s1.27-2.52.81-3.91c1.31-.67 2.19-1.91 2.19-3.34z"></path>
+                    <path fill="#fff" d="M9.95 16.35l-3.6-3.6 1.4-1.4 2.2 2.2 5.3-5.3 1.4 1.4z"></path>
+                  </svg>
+                </span>
+              </div>
+              <div class="meta-line">
+                <span class="handle" id="profileHandle">@lin_zhiyuan</span>
+              </div>
+            </div>
+
+            <div class="profile-bio region r-body" data-region="简介" id="profileBio">前端老师。拆页面，也拆问题。
+平时写教学用的 HTML/CSS 小例子。</div>
+
+            <div class="profile-stats region r-actions" data-region="关注/粉丝">
+              <span><b id="countFollowing">128</b> 关注</span>
+              <span><b id="countFollowers">1.2万</b> 粉丝</span>
+            </div>
+          </section>
+
+          <!-- ================= 帖子卡 ================= -->
+          <article class="post" id="postCard" aria-labelledby="displayName">
+            <!-- 头部区：头像 + 昵称/handle -->
+            <header class="post-head">
+              <!-- 头像：图片层与字母层叠在同一容器，JS 只切 hidden -->
+              <div class="avatar region r-avatar" data-region="头像区">
+                <img id="avatarImg" alt="" hidden="">
+                <span id="avatarLetter">林</span>
+              </div>
+
+              <div class="head-main region r-head" data-region="头部区">
+                <div class="name-line">
+                  <span class="display-name" id="displayName">林知远</span>
+                  <!-- 认证徽章：内联 SVG，随尺寸缩放且无需图标字体/网络请求 -->
+                  <span class="badge" id="verifiedBadge" aria-label="已认证">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path fill="#1d9bf0" d="M22.25 12c0-1.43-.88-2.67-2.19-3.34.46-1.39.2-2.9-.81-3.91s-2.52-1.27-3.91-.81c-.66-1.31-1.91-2.19-3.34-2.19s-2.67.88-3.33 2.19c-1.4-.46-2.91-.2-3.92.81s-1.26 2.52-.8 3.91c-1.31.67-2.2 1.91-2.2 3.34s.89 2.67 2.2 3.34c-.46 1.39-.21 2.9.8 3.91s2.52 1.26 3.91.81c.67 1.31 1.91 2.19 3.34 2.19s2.67-.88 3.34-2.19c1.39.45 2.9.2 3.91-.81s1.27-2.52.81-3.91c1.31-.67 2.19-1.91 2.19-3.34z"></path>
+                      <path fill="#fff" d="M9.95 16.35l-3.6-3.6 1.4-1.4 2.2 2.2 5.3-5.3 1.4 1.4z"></path>
+                    </svg>
+                  </span>
+                </div>
+                <div class="meta-line">
+                  <span class="handle" id="handleText">@lin_zhiyuan</span>
+                  <span class="meta-dot">·</span>
+                  <time class="post-time" id="timeText">33分钟前</time>
+                </div>
+              </div>
+            </header>
+
+            <!-- 正文：白色间距靠 pre-wrap，JS 用 textContent 写入，避免被当成 HTML 执行 -->
+            <div class="post-body region r-body" id="postBody" data-region="正文区">大多数人不会去搜索。
+
+X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行。
+同一个 DOM，换一套 CSS 变量，就是另一套主题。</div>
+
+            <!-- 配图：默认 hidden；有图时为 16:9 裁切 -->
+            <div class="post-media region r-media" id="mediaWrap" data-region="配图区" hidden="">
+              <img id="mediaImg" alt="">
+            </div>
+
+            <!-- 互动行：四个带数字，图标统一 18px 内联 SVG -->
+            <footer class="post-actions region r-actions" data-region="互动区">
+              <button class="action action-reply" type="button" aria-label="回复">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 12.5c0-4.1 3.3-7.2 8-7.2s8 3.1 8 7.2-3.3 7.2-8 7.2c-.9 0-1.8-.1-2.6-.4L6 20.2l.9-3.3C5 15.7 4 14.2 4 12.5z"></path>
+                </svg>
+                <span class="count" id="countReply">12</span>
+              </button>
+
+              <button class="action action-repost" type="button" aria-label="转推">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 8h11l-2.5-2.5M18 16H7l2.5 2.5"></path>
+                </svg>
+                <span class="count" id="countRepost">86</span>
+              </button>
+
+              <button class="action action-like" type="button" aria-label="点赞">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 20s-7-4.4-7-9.2c0-2.2 1.7-3.9 3.9-3.9 1.3 0 2.5.7 3.1 1.7.6-1 1.8-1.7 3.1-1.7 2.2 0 3.9 1.7 3.9 3.9C19 15.6 12 20 12 20z"></path>
+                </svg>
+                <span class="count" id="countLike">1204</span>
+              </button>
+
+              <button class="action action-views" type="button" aria-label="查看">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 20v-5M10 20V10M15 20v-6M20 20V5"></path>
+                </svg>
+                <span class="count" id="countView">8650</span>
+              </button>
+
+              <button class="action action-bookmark" type="button" aria-label="收藏">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 4h12v17l-6-4-6 4z"></path>
+                </svg>
+                <span class="count" id="countBookmark">34</span>
+              </button>
+
+              <button class="action action-share" type="button" aria-label="分享">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 15V3M12 3l-4 4M12 3l4 4M5 12v8h14v-8"></path>
+                </svg>
+              </button>
+            </footer>
+          </article>
+
+          <!-- ================= 翻译演示卡（v1.1.0 纯追加） =================
+               放在现有帖子卡下面，作为「时间线里的下一条英文帖子」。
+               整块用独立 id / class（tr- 前缀），不复用、不改动上面任何节点：
+                 · 导出 buildExportSvg() 只克隆 profileCard / postCard，
+                   所以这张卡不会进入现有两档 PNG；
+                 · 主题靠现有 CSS 变量自动跟随；
+                 · 结构标注用独立 .tr-region 配色。
+               两种 X 翻译形态都写在 DOM 里，用 hidden 切换，不重建节点。 -->
+          <article class="tr-card" id="translationCard" aria-label="英文帖子翻译演示卡">
+
+            <header class="tr-head tr-region tr-r-head" data-region="头部区">
+              <div class="tr-avatar">
+                <img id="trAvatarImg" alt="" hidden="">
+                <span id="trAvatarLetter">林</span>
+              </div>
+              <div class="tr-head-main">
+                <div class="tr-name-line">
+                  <span class="tr-name" id="trDisplayName">林知远</span>
+                  <span class="tr-badge" id="trVerifiedBadge" aria-label="已认证">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path fill="#1d9bf0" d="M22.25 12c0-1.43-.88-2.67-2.19-3.34.46-1.39.2-2.9-.81-3.91s-2.52-1.27-3.91-.81c-.66-1.31-1.91-2.19-3.34-2.19s-2.67.88-3.33 2.19c-1.4-.46-2.91-.2-3.92.81s-1.26 2.52-.8 3.91c-1.31.67-2.2 1.91-2.2 3.34s.89 2.67 2.2 3.34c-.46 1.39-.21 2.9.8 3.91s2.52 1.26 3.91.81c.67 1.31 1.91 2.19 3.34 2.19s2.67-.88 3.34-2.19c1.39.45 2.9.2 3.91-.81s1.27-2.52.81-3.91c1.31-.67 2.19-1.91 2.19-3.34z"></path>
+                      <path fill="#fff" d="M9.95 16.35l-3.6-3.6 1.4-1.4 2.2 2.2 5.3-5.3 1.4 1.4z"></path>
+                    </svg>
+                  </span>
+                </div>
+                <div class="tr-meta-line">
+                  <span class="tr-handle" id="trHandleText">@lin_zhiyuan</span>
+                  <span>·</span>
+                  <time class="tr-time" id="trTimeText">刚刚</time>
+                </div>
+              </div>
+            </header>
+
+            <!-- ===== 形态 A：经典手动版（默认） =====
+                 X 旧版：英文正文下方一行蓝色「翻译帖子」链接，
+                 点击后才在下方展开译文，并标注「由 Google 翻译自英语」。 -->
+            <div id="trModeClassic">
+              <div class="tr-body tr-region tr-r-orig" id="trOriginalClassic" data-region="英文原文">Most people never search. X's post page looks complex, but it breaks down into just three parts: header, body, and actions.</div>
+              <button class="tr-link" id="trTranslateBtn" type="button">翻译帖子</button>
+              <div class="tr-translated tr-region tr-r-trans" id="trTranslatedBox" data-region="中文译文" hidden="">
+                <div class="tr-credit">由 Google 翻译自英语</div>
+                <div class="tr-translated-text" id="trTranslatedClassic">大多数人不会去搜索。X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行。</div>
+              </div>
+            </div>
+
+            <!-- ===== 形态 B：2026 自动翻译版（默认隐藏） =====
+                 译文默认显示，顶部标注「翻译自英语」，
+                 右侧「显示原文」可在 译文 / 英文原文 之间来回切。 -->
+            <div id="trModeAuto" hidden="">
+              <div class="tr-auto-bar">
+                <span>翻译自英语 · 由 Google 翻译</span>
+                <button class="tr-link" id="trShowOriginalBtn" type="button">显示原文</button>
+              </div>
+              <div class="tr-body tr-region tr-r-trans" id="trAutoBody" data-region="中文译文">大多数人不会去搜索。X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行。</div>
+            </div>
+
+            <!-- 互动行：与现有帖子卡同款（6 个操作 + 5 个数字）。
+                 数字不写死在主数据里，由 10.9 从左侧 5 个输入框实时同步；
+                 「随机 / 恢复示例」改数字时也跟着变。全部内联 SVG，不引外链、不进导出。 -->
+            <footer class="tr-actions tr-region tr-r-actions" data-region="互动区">
+              <button class="tr-action" type="button" aria-label="回复">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 12.5c0-4.1 3.3-7.2 8-7.2s8 3.1 8 7.2-3.3 7.2-8 7.2c-.9 0-1.8-.1-2.6-.4L6 20.2l.9-3.3C5 15.7 4 14.2 4 12.5z"></path>
+                </svg>
+                <span class="tr-count" id="trCountReply">12</span>
+              </button>
+              <button class="tr-action tr-action-repost" type="button" aria-label="转推">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 8h11l-2.5-2.5M18 16H7l2.5 2.5"></path>
+                </svg>
+                <span class="tr-count" id="trCountRepost">86</span>
+              </button>
+              <button class="tr-action tr-action-like" type="button" aria-label="点赞">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 20s-7-4.4-7-9.2c0-2.2 1.7-3.9 3.9-3.9 1.3 0 2.5.7 3.1 1.7.6-1 1.8-1.7 3.1-1.7 2.2 0 3.9 1.7 3.9 3.9C19 15.6 12 20 12 20z"></path>
+                </svg>
+                <span class="tr-count" id="trCountLike">1204</span>
+              </button>
+              <button class="tr-action" type="button" aria-label="查看">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 20v-5M10 20V10M15 20v-6M20 20V5"></path>
+                </svg>
+                <span class="tr-count" id="trCountView">8650</span>
+              </button>
+              <button class="tr-action tr-action-bookmark" type="button" aria-label="收藏">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 4h12v17l-6-4-6 4z"></path>
+                </svg>
+                <span class="tr-count" id="trCountBookmark">34</span>
+              </button>
+              <button class="tr-action" type="button" aria-label="分享">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 15V3M12 3l-4 4M12 3l4 4M5 12v8h14v-8"></path>
+                </svg>
+              </button>
+            </footer>
+          </article>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- 产品帮助：操作要点集中放页面最底部，同款小灰字 -->
+  <footer class="footnotes">
+    <p>左侧编辑面板改内容，右侧实时预览；点「导出图片」即保存 PNG 并自动生成 10 秒竖屏视频。</p>
+    <p>视频固定 1080×1920（9:16），卡片空白处自动填充当前主题背景色；换深色/浅色主题后重新生成即可。</p>
+    <p>「🎵 选择背景音乐」后视频自动重新生成：音乐不足 10 秒自动循环，结尾自动淡出，音量可调。</p>
+    <p>帖子卡上不显示粉丝数，粉丝数在个人主页。</p>
+  </footer>
+</main>
+
+<!-- 固定声明：不可关闭，也不提供关闭按钮 -->
+<div class="disclaimer">模拟 X 界面 · 内容创作工具</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ==========================================================
+     01. 元素引用
+     ========================================================== */
+  var body = document.body;
+  var $ = function (id) { return document.getElementById(id); };
+
+  // 共用数据
+  var nameInput = $('nameInput');
+  var handleInput = $('handleInput');
+  var verifiedToggle = $('verifiedToggle');
+  var avatarImg = $('avatarImg');
+  var avatarLetter = $('avatarLetter');
+  var avatarFile = $('avatarFile');
+  var avatarClear = $('avatarClear');
+  var avatarModeGroup = $('avatarModeGroup');
+  var avatarUploadRow = $('avatarUploadRow');
+  var avatarOnlineRow = $('avatarOnlineRow');
+  var avatarRoll = $('avatarRoll');
+  var avatarHint = $('avatarHint');
+  var avatarDesc = $('avatarDesc');
+
+  // 主页头部
+  var bioInput = $('bioInput');
+  var followingCount = $('followingCount');
+  var followersCount = $('followersCount');
+  var profileTopName = $('profileTopName');
+  var profileName = $('profileName');
+  var profileHandle = $('profileHandle');
+  var profileBio = $('profileBio');
+  var profileBadge = $('profileBadge');
+  var profileCard = $('profileCard');
+  var profileAvatarImg = $('profileAvatarImg');
+  var profileAvatarLetter = $('profileAvatarLetter');
+
+  // 帖子
+  var timeInput = $('timeInput');
+  var bodyInput = $('bodyInput');
+  var replyInput = $('replyCount');
+  var repostInput = $('repostCount');
+  var likeInput = $('likeCount');
+  var viewInput = $('viewCount');
+  var bookmarkInput = $('bookmarkCount');
+  var timeHint = $('timeHint');
+  var displayName = $('displayName');
+  var handleText = $('handleText');
+  var timeText = $('timeText');
+  var postBody = $('postBody');
+  var verifiedBadge = $('verifiedBadge');
+  var postCard = $('postCard');
+
+  // 配图
+  var mediaWrap = $('mediaWrap');
+  var mediaImg = $('mediaImg');
+  var mediaFile = $('mediaFile');
+  var mediaClear = $('mediaClear');
+
+  /* ==========================================================
+     02. 数字格式化（对应教案里的 formatCount 练习）
+     ----------------------------------------------------------
+     X 上 12000 会写成「1.2万」，1200 保持原样。
+     这里只处理万 / 亿两档，够课堂用。
+     ========================================================== */
+  function formatCount(raw) {
+    var n = Number(raw);
+    if (!raw || !isFinite(n) || n <= 0) return '0';
+    if (n >= 100000000) return trimZero(n / 100000000) + '亿';
+    if (n >= 10000) return trimZero(n / 10000) + '万';
+    return String(Math.floor(n));
+  }
+  function trimZero(v) {
+    return v.toFixed(1).replace(/\.0$/, '');
+  }
+
+  /* ==========================================================
+     02.1 时间：真实时间戳 → 相对时间
+     ----------------------------------------------------------
+     卡片里不存"字符串"，只存一个毫秒时间戳 postTime。
+     每次渲染现算一次相对时间，所以页面开着也会从「刚刚」变成「1分钟前」。
+     规则：<1 分钟 → 刚刚；<60 分钟 → N分钟前；<24 小时 → N小时前；
+     再久就显示日期（跨年才带年份）。
+     ========================================================== */
+  var postTime = Date.now();
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  function formatTime(ts) {
+    var minutes = Math.floor((Date.now() - ts) / 60000);
+    if (minutes < 1) return '刚刚';
+    if (minutes < 60) return minutes + '分钟前';
+    var hours = Math.floor(minutes / 60);
+    if (hours < 24) return hours + '小时前';
+    var d = new Date(ts);
+    var md = (d.getMonth() + 1) + '月' + d.getDate() + '日';
+    return d.getFullYear() === new Date().getFullYear()
+      ? md
+      : d.getFullYear() + '年' + md;
+  }
+
+  function absoluteTime(ts) {
+    var d = new Date(ts);
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) +
+           ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  }
+
+  /* ==========================================================
+     02.2 随机数据（全部本地生成，不联网）
+     ----------------------------------------------------------
+     名字池全是虚构人物，不对应任何真实公众人物 / 网红 / 公司高管。
+     ========================================================== */
+  function rnd(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+  function pick(list) { return list[rnd(0, list.length - 1)]; }
+  function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
+
+  // slug 是手工写的拼音/英文，保证 handle 长得像真的
+  var PEOPLE = [
+    { name: '周行野', slug: 'zhou_xingye' },
+    { name: '沈迟', slug: 'shen_chi' },
+    { name: '陆青禾', slug: 'lu_qinghe' },
+    { name: '江晚舟', slug: 'jiang_wanzhou' },
+    { name: '顾南枝', slug: 'gu_nanzhi' },
+    { name: '温叙白', slug: 'wen_xubai' },
+    { name: '岑溪', slug: 'cen_xi' },
+    { name: '许拾一', slug: 'xu_shiyi' },
+    { name: '何知夏', slug: 'he_zhixia' },
+    { name: '易南风', slug: 'yi_nanfeng' },
+    { name: '傅清野', slug: 'fu_qingye' },
+    { name: '梁雪见', slug: 'liang_xuejian' },
+    { name: '邵亦安', slug: 'shao_yian' },
+    { name: '罗见山', slug: 'luo_jianshan' },
+    { name: '韩听澜', slug: 'han_tinglan' },
+    { name: 'Mira Halloway', slug: 'mira_halloway' },
+    { name: 'Theo Vance', slug: 'theo_vance' },
+    { name: 'Nadia Brook', slug: 'nadia_brook' },
+    { name: 'Ellis Ward', slug: 'ellis_ward' },
+    { name: 'Rowan Pike', slug: 'rowan_pike' },
+    { name: 'Juno Calder', slug: 'juno_calder' },
+    { name: 'Silas Reed', slug: 'silas_reed' },
+    { name: 'Tessa Marsh', slug: 'tessa_marsh' },
+    { name: 'Owen Frost', slug: 'owen_frost' },
+    { name: 'Lena Ashcroft', slug: 'lena_ashcroft' },
+    { name: 'Caleb Nott', slug: 'caleb_nott' },
+    { name: 'Iris Vane', slug: 'iris_vane' }
+  ];
+
+  var BIOS = [
+    '前端老师。拆页面，也拆问题。\n平时写教学用的 HTML/CSS 小例子。',
+    '写代码，也写教书笔记。\n最近在拆社交产品的页面结构。',
+    '白天上班，晚上折腾 CSS。\n喜欢把复杂的东西讲简单。',
+    'Designer & 前端。\n偶尔发点排版和字体的碎碎念。',
+    '纪录片爱好者。\n研究的课题是：人为什么爱刷时间线。',
+    '在做一个没几个人知道的小工具。\n进度 60%，焦虑 100%。'
+  ];
+
+  // 粉丝数四档：几万 / 几十万 / 百万级 / 千万级 —— 数字要体面，不能小
+  var FOLLOWER_TIERS = [[30000, 99999], [100000, 499999], [500000, 1999999], [2000000, 4999999]];
+
+  function randomFollowers() {
+    var tier = pick(FOLLOWER_TIERS);
+    return rnd(tier[0], tier[1]);
+  }
+
+  /* 互动数字：先生成点赞，再按比例推其余几个。
+     比例区间就是校验条件，所以生成出来的值天然满足偏序。 */
+  function makeEngagement() {
+    var likes = rnd(5000, 60000);
+    return {
+      likes: likes,
+      // 转推 ≈ 点赞的 1/8 ~ 1/2
+      reposts: rnd(Math.max(1, Math.ceil(likes / 8)), Math.max(1, Math.floor(likes / 2))),
+      // 回复 ≈ 点赞的 1/30 ~ 1/5，明显小于点赞
+      replies: rnd(Math.max(1, Math.ceil(likes / 30)), Math.max(1, Math.floor(likes / 5))),
+      // 书签 ≈ 点赞的 1/20 ~ 1/4
+      bookmarks: rnd(Math.max(1, Math.floor(likes / 20)), Math.max(1, Math.floor(likes * 0.25))),
+      // 查看 ≥ 点赞的 1.5 倍
+      views: rnd(Math.round(likes * 1.5), Math.max(likes + 1, Math.round(likes * 7)))
+    };
+  }
+
+  // 生成后自检：查看 ≥ 点赞 ≥ 转推，回复明显小于点赞，书签小于点赞
+  function checkEngagement(n) {
+    return n.views >= n.likes &&
+           n.likes >= n.reposts &&
+           n.replies < n.likes &&
+           n.replies >= Math.floor(n.likes / 30) &&
+           n.replies <= Math.ceil(n.likes / 5) &&
+           n.bookmarks < n.likes &&
+           n.reposts >= Math.floor(n.likes / 8) &&
+           n.reposts <= Math.ceil(n.likes / 2);
+  }
+
+  // 不满足就整组重抽；最多重试 30 次，兜底返回一组（理论上到不了）
+  // prev 用来避免整组里某个数字和上一屏一模一样（看起来像没换）
+  function randomEngagement(prev) {
+    for (var i = 0; i < 30; i++) {
+      var n = makeEngagement();
+      var same = prev && (n.likes === prev.likes || n.reposts === prev.reposts ||
+                          n.replies === prev.replies || n.bookmarks === prev.bookmarks ||
+                          n.views === prev.views);
+      if (checkEngagement(n) && !same) return n;
+    }
+    return makeEngagement();
+  }
+
+  // handle：小写字母 + 可选下划线 + 2~4 位数字
+  function rollHandle(base) {
+    var clean = (base || 'someone').toLowerCase().replace(/[^a-z]/g, '') || 'someone';
+    var digits = String(rnd(10, 9999));
+    var under = Math.random() < 0.4 ? '_' : '';
+    return clean + under + digits;
+  }
+
+  function findPerson(name) {
+    for (var i = 0; i < PEOPLE.length; i++) {
+      if (PEOPLE[i].name === name) return PEOPLE[i];
+    }
+    return null;
+  }
+
+  /* ==========================================================
+     03. 数据 → 视图
+     ----------------------------------------------------------
+     所有文本都用 textContent 写入，不拼 innerHTML：
+     用户在编辑框里输入 <script> 也只会作为文字显示。
+     同一份昵称 / handle / 认证，同时写给主页头部和帖子卡。
+     ========================================================== */
+  function render() {
+    var name = nameInput.value.trim() || '未命名';
+    var handle = '@' + handleInput.value.trim().replace(/^@+/, '');
+    var showBadge = verifiedToggle.checked;
+
+    // 头像占位字母始终跟随昵称首字（图片存在时它只是被隐藏）
+    var letter = Array.from(name)[0] || '?';
+
+    // —— 主页头部 ——
+    profileTopName.textContent = name;
+    profileName.textContent = name;
+    profileHandle.textContent = handle;
+    profileBio.textContent = bioInput.value;
+    profileBadge.hidden = !showBadge;
+    $('countFollowing').textContent = formatCount(followingCount.value);
+    $('countFollowers').textContent = formatCount(followersCount.value);
+    profileAvatarLetter.textContent = letter;
+
+    // —— 帖子卡 ——
+    displayName.textContent = name;
+    handleText.textContent = handle;
+    // 时间：只存时间戳，显示时现算相对时间；输入框里同步显示同一个结果
+    var shownTime = formatTime(postTime);
+    timeText.textContent = shownTime;
+    timeInput.value = shownTime;
+    timeHint.textContent = absoluteTime(postTime) + ' · 卡片按相对时间显示';
+    postBody.textContent = bodyInput.value;
+    verifiedBadge.hidden = !showBadge;
+    avatarLetter.textContent = letter;
+
+    // 互动数字按 X 官方规则缩写显示（12000 → 1.2万，255826 → 25.5万）：
+    // 原始大数字会把窄屏互动行挤破，缩写后所有宽度都放得下，且更像真 X
+    $('countReply').textContent = formatCount(replyInput.value);
+    $('countRepost').textContent = formatCount(repostInput.value);
+    $('countLike').textContent = formatCount(likeInput.value);
+    $('countView').textContent = formatCount(viewInput.value);
+    $('countBookmark').textContent = formatCount(bookmarkInput.value);
+  }
+
+  // 输入即渲染：不刷新页面
+  // 中文输入法拼音阶段的 input 事件也会触发，如果每次都 render，
+  // 卡片上的正文会被半截拼音反复替换，看起来像在抽搐。
+  // 用 compositionstart / compositionend 标记合成期，合成中跳过渲染。
+  var composing = false;
+
+  [nameInput, handleInput, bodyInput, bioInput,
+   followingCount, followersCount,
+   replyInput, repostInput, likeInput, viewInput, bookmarkInput].forEach(function (el) {
+    el.addEventListener('compositionstart', function () {
+      composing = true;
+    });
+    el.addEventListener('compositionend', function () {
+      composing = false;
+      render();
+    });
+    el.addEventListener('input', function () {
+      if (composing) return;
+      render();
+    });
+  });
+  verifiedToggle.addEventListener('change', render);
+
+  /* ==========================================================
+     04. 本地图片：FileReader → data URL
+     ----------------------------------------------------------
+     图片不经过任何服务器，读成 base64 直接塞给 <img>。
+     一张头像同时喂给主页的大头像和帖子卡的小头像。
+     ========================================================== */
+  function loadImage(file, onReady) {
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      onReady(reader.result);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  /* ==========================================================
+     04b. 头像来源：字母占位 / 本地上传 / 在线生成
+     ----------------------------------------------------------
+     在线生成用 DiceBear（bottts 机器人 / personas 插画人像 / identicon 像素块），
+     只用生成式头像，不接任何真人照片服务（如 pravatar）。
+
+     为什么取到图要立刻转成 base64 data URL？
+       导出图片走的是 SVG foreignObject + canvas。
+       foreignObject 里不能加载远程资源，而且画到 canvas 时远程图会污染
+       画布（tainted canvas），toBlob / toDataURL 直接抛安全错误，
+       导出的 PNG 要么空白要么失败。data URL 没有这两个问题。
+
+     两条转换路线（都实现了，实测走的是路线 1）：
+       1) fetch → blob → FileReader.readAsDataURL
+          DiceBear 响应带 Access-Control-Allow-Origin: *，不会触发 CORS 拦截。
+       2) 兜底：Image + crossOrigin="anonymous" 画到 canvas 再 toDataURL
+          用于 fetch 不可用 / 被拦 / blob 读失败的情况。
+
+     超时 3 秒；失败自动退回字母占位，只在按钮旁给一行小字，不弹窗。
+     初次打开页面不发任何请求 —— 只有点「换一个」才 fetch。
+     ========================================================== */
+  var avatarMode = 'letter';   // letter | upload | online
+  var avatarDataUrl = '';      // 当前头像（data URL）；空 = 字母占位
+  var avatarRoute = '';        // 记录这次用的是哪条转换路线（便于课上讲解 / 排查）
+  var avatarReqId = 0;         // 连点时只认最后一次请求的结果
+
+  var AVATAR_API = 'https://api.dicebear.com/9.x/';
+  var AVATAR_STYLES = ['bottts', 'personas', 'identicon'];
+
+  function nextAvatarUrl() {
+    var style = pick(AVATAR_STYLES);
+    var seed = String(rnd(100000, 999999));
+    return AVATAR_API + style + '/svg?seed=' + seed + '&size=256';
+  }
+
+  // 统一改头像：有图就显示图，没图就回到字母占位
+  function setAvatarImage(src) {
+    avatarDataUrl = src || '';
+    var has = !!avatarDataUrl;
+    if (has) {
+      avatarImg.src = avatarDataUrl;
+      profileAvatarImg.src = avatarDataUrl;
+    } else {
+      avatarImg.removeAttribute('src');
+      profileAvatarImg.removeAttribute('src');
+    }
+    avatarImg.hidden = !has;
+    profileAvatarImg.hidden = !has;
+    avatarLetter.hidden = has;
+    profileAvatarLetter.hidden = has;
+  }
+
+  function setAvatarMode(mode) {
+    avatarMode = mode;
+    Array.prototype.forEach.call(avatarModeGroup.querySelectorAll('button'), function (b) {
+      b.classList.toggle('on', b.dataset.avatarMode === mode);
+    });
+    avatarUploadRow.hidden = mode !== 'upload';
+    avatarOnlineRow.hidden = mode !== 'online';
+
+    // 换来源就把上一张清掉：三种来源各管一张，避免「明明是字母模式却还挂着一张图」
+    setAvatarImage('');
+    avatarFile.value = '';
+    avatarHint.textContent = '';
+
+    if (mode === 'letter') {
+      avatarDesc.textContent = '未上传时用昵称首字占位；一张图同时用于主页和帖子卡。';
+    } else if (mode === 'upload') {
+      avatarDesc.textContent = '图片只在本机读取（FileReader），不会上传到任何服务器。';
+    } else {
+      avatarDesc.textContent = '生成式头像（机器人 / 插画 / 像素），随机取一张，不联网保存。';
+      avatarHint.textContent = '点「换一个」取一张';
+    }
+  }
+
+  /* 取图并转 data URL；成功回调拿到 base64，失败回调拿到失败原因 */
+  function fetchAvatarDataUrl(url, onOk, onFail) {
+    var done = false;
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = setTimeout(function () {
+      if (done) return;
+      done = true;
+      if (ctrl) ctrl.abort();
+      onFail('超时');
+    }, 3000);
+
+    // 路线 2：<img crossOrigin> → canvas.toDataURL
+    function viaCanvas() {
+      var im = new Image();
+      im.crossOrigin = 'anonymous';
+      var t2 = setTimeout(function () {
+        if (done) return;
+        done = true;
+        im.src = '';
+        onFail('超时');
+      }, 3000);
+      im.onload = function () {
+        if (done) return;
+        done = true;
+        clearTimeout(t2);
+        try {
+          var c = document.createElement('canvas');
+          c.width = im.naturalWidth || 256;
+          c.height = im.naturalHeight || 256;
+          c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+          avatarRoute = 'canvas';
+          onOk(c.toDataURL('image/png'));
+        } catch (e) {
+          onFail('跨域受限');
+        }
+      };
+      im.onerror = function () {
+        if (done) return;
+        done = true;
+        clearTimeout(t2);
+        onFail('图片加载失败');
+      };
+      im.src = url;
+    }
+
+    if (typeof fetch !== 'function' || !ctrl) { done = true; clearTimeout(timer); viaCanvas(); return; }
+
+    fetch(url, { mode: 'cors', signal: ctrl.signal })
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.blob();
+      })
+      .then(function (blob) {
+        var reader = new FileReader();
+        reader.onload = function () {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          avatarRoute = 'fetch';
+          onOk(reader.result);
+        };
+        reader.onerror = function () { viaCanvas(); };
+        reader.readAsDataURL(blob);
+      })
+      .catch(function () {
+        if (done) return;       // 已经超时失败了，别再补一次请求
+        clearTimeout(timer);
+        done = false;           // 交给 viaCanvas 重新计时
+        viaCanvas();
+      });
+  }
+
+  Array.prototype.forEach.call(avatarModeGroup.querySelectorAll('button'), function (btn) {
+    btn.addEventListener('click', function () {
+      setAvatarMode(btn.dataset.avatarMode);
+      flash(btn);
+    });
+  });
+
+  avatarFile.addEventListener('change', function () {
+    loadImage(this.files && this.files[0], function (src) {
+      setAvatarImage(src);
+    });
+  });
+
+  avatarClear.addEventListener('click', function () {
+    setAvatarImage('');
+    avatarFile.value = '';
+  });
+
+  avatarRoll.addEventListener('click', function () {
+    var btn = this;
+    if (avatarMode !== 'online') return;   // 防御：非在线模式下不发起请求，避免状态卡死
+    var myId = ++avatarReqId;
+    avatarRoll.disabled = true;
+    avatarHint.textContent = '取图中…';
+
+    fetchAvatarDataUrl(nextAvatarUrl(), function (src) {
+      avatarRoll.disabled = false;
+      // 请求回来时用户可能已经切到别的来源，那就丢弃结果
+      if (myId !== avatarReqId || avatarMode !== 'online') return;
+      setAvatarImage(src);
+      avatarHint.textContent = '已生成 · ' + avatarRoute;
+      flash(btn);
+    }, function (reason) {
+      avatarRoll.disabled = false;
+      if (myId !== avatarReqId || avatarMode !== 'online') return;
+      // 失败：退回字母占位 + 一行提示，不白屏不弹窗
+      setAvatarImage('');
+      avatarHint.textContent = '取图失败（' + reason + '），已用字母占位';
+      flash(btn);
+    });
+  });
+
+  mediaFile.addEventListener('change', function () {
+    loadImage(this.files && this.files[0], function (src) {
+      mediaImg.src = src;
+      mediaWrap.hidden = false;
+    });
+  });
+
+  mediaClear.addEventListener('click', function () {
+    mediaImg.removeAttribute('src');
+    mediaWrap.hidden = true;
+    mediaFile.value = '';
+  });
+
+  /* ==========================================================
+     Handle 打码开关（预览与导出同步，默认关闭）
+     ----------------------------------------------------------
+     页面里 Handle 出现两次：
+       #profileHandle —— 个人主页头部
+       #handleText    —— 帖子卡头部
+     导出范围选「主页+帖子」时两张卡都会进 PNG，所以必须一起处理，
+     只打一个会在另一种范围下漏出来。
+
+     这里只切 class，不动 textContent，也不重建节点：
+       - renderAll() / 全部随机 / 恢复示例 都是改 input 后重写文本，
+         节点还在，class 不会丢；
+       - 导出走 cloneNode(true)，class 跟着进 SVG，
+         因此「预览看到的 == 导出的」，导出代码里不用再写一遍。
+     ========================================================== */
+  var maskHandleToggle = $('maskHandleToggle');
+  var handleEls = [document.getElementById('profileHandle'),
+                   document.getElementById('handleText')];
+
+  function applyHandleMask() {
+    var on = maskHandleToggle.checked;
+    handleEls.forEach(function (el) {
+      if (el) el.classList.toggle('is-masked', on);
+    });
+  }
+
+  maskHandleToggle.addEventListener('change', applyHandleMask);
+
+  // 初始化：复选框默认未勾选 → 不打码（刷新后同样保持关闭）
+  applyHandleMask();
+
+  /* ==========================================================
+     05. 主题切换
+     ----------------------------------------------------------
+     只改 body 的 data-theme，CSS 变量随之生效。
+     ========================================================== */
+  var themeButtons = document.querySelectorAll('[data-theme-btn]');
+
+  themeButtons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      body.dataset.theme = btn.dataset.themeBtn;
+      themeButtons.forEach(function (b) {
+        b.classList.toggle('on', b === btn);
+      });
+    });
+  });
+
+  /* ==========================================================
+     06. 预览内容切换：全部 / 主页头部 / 帖子卡
+     ----------------------------------------------------------
+     只切 hidden，不动 DOM 结构；两个区块的数据始终是同步的。
+     ========================================================== */
+  var viewButtons = document.querySelectorAll('[data-view-btn]');
+
+  viewButtons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var view = btn.dataset.viewBtn;
+      profileCard.hidden = (view === 'post');
+      postCard.hidden = (view === 'profile');
+      viewButtons.forEach(function (b) {
+        b.classList.toggle('on', b === btn);
+      });
+    });
+  });
+
+  /* ==========================================================
+     07. 结构标注开关
+     ----------------------------------------------------------
+     一个 body 类名控制全部描边与标签。
+     ========================================================== */
+  $('annotateToggle').addEventListener('change', function () {
+    body.classList.toggle('annotate', this.checked);
+  });
+
+  /* ==========================================================
+     08. 演示用的两套数据：随机 / 恢复示例
+     ----------------------------------------------------------
+     「随机」是整页唯一的随机入口：点一次，昵称、handle、简介、时间、
+     粉丝、关注、回复/转推/点赞/查看/书签——全部换掉，
+     等于换成"另一个人发的另一条帖子"。
+     所有随机都在本地算，不发任何请求。
+     ========================================================== */
+  var SAMPLE = {
+    name: '林知远',
+    handle: 'lin_zhiyuan',
+    bio: '前端老师。拆页面，也拆问题。\n平时写教学用的 HTML/CSS 小例子。',
+    following: 128,
+    followers: 12000,
+    reply: 12,
+    repost: 86,
+    like: 1204,
+    view: 8650,
+    bookmark: 34,
+    ageMinutes: 47      // 示例帖固定显示「47分钟前」，讲课时参照稳定
+  };
+
+  function applyRandom() {
+    // 昵称 + handle 一起换：handle 由名字的 slug 生成
+    // 连点时避免抽到当前这个人（最多重抽 5 次），不然看起来像没反应
+    var person = pick(PEOPLE);
+    for (var i = 0; i < 5 && person.name === nameInput.value; i++) person = pick(PEOPLE);
+    nameInput.value = person.name;
+    handleInput.value = rollHandle(person.slug);
+
+    // 简介同理：池子只有 6 条，连点很容易抽回上一条，看起来像没换
+    var bio = pick(BIOS);
+    for (var j = 0; j < 5 && bio === bioInput.value; j++) bio = pick(BIOS);
+    bioInput.value = bio;
+
+    // 粉丝 / 关注：关注数不超过粉丝数的 70%，避免一眼假
+    var followers = randomFollowers();
+    followersCount.value = followers;
+    followingCount.value = clamp(rnd(500, 9000), 1, Math.max(1, Math.round(followers * 0.7)));
+
+    // 互动数字：成组生成，保持偏序关系；传入上一组，避免某个数字原地不动
+    var e = randomEngagement({
+      likes: +likeInput.value, reposts: +repostInput.value, replies: +replyInput.value,
+      bookmarks: +bookmarkInput.value, views: +viewInput.value
+    });
+    likeInput.value = e.likes;
+    repostInput.value = e.reposts;
+    replyInput.value = e.replies;
+    bookmarkInput.value = e.bookmarks;
+    viewInput.value = e.views;
+
+    // 过去 72 小时内随机：昨天、前天都能落到
+    postTime = Date.now() - rnd(1, 72 * 60) * 60000;
+
+    render();
+  }
+
+  function applySample() {
+    nameInput.value = SAMPLE.name;
+    handleInput.value = SAMPLE.handle;
+    bioInput.value = SAMPLE.bio;
+    followingCount.value = SAMPLE.following;
+    followersCount.value = SAMPLE.followers;
+    replyInput.value = SAMPLE.reply;
+    repostInput.value = SAMPLE.repost;
+    likeInput.value = SAMPLE.like;
+    viewInput.value = SAMPLE.view;
+    bookmarkInput.value = SAMPLE.bookmark;
+    postTime = Date.now() - SAMPLE.ageMinutes * 60000;
+    render();
+  }
+
+  // 点击反馈：闪一下。先把类去掉并强制重排，动画才能重复播放
+  function flash(btn) {
+    btn.classList.remove('flash');
+    void btn.offsetWidth;
+    btn.classList.add('flash');
+  }
+
+  $('rollBtn').addEventListener('click', function () {
+    applyRandom();
+    flash(this);
+  });
+
+  $('resetBtn').addEventListener('click', function () {
+    applySample();
+    flash(this);
+  });
+
+  /* ==========================================================
+     09. 导出图片：DOM → SVG(foreignObject) → canvas → PNG
+     ----------------------------------------------------------
+     为什么不能直接把 DOM 存成图片？
+     因为浏览器没有这个 API。DOM 只是"排版指令"，屏幕上的像素是渲染
+     引擎临时算出来的，没有句柄能直接取。能取到的只有 canvas 和 SVG 这类
+     "可绘制对象"，所以必须先把 DOM 翻译成它。
+
+     方案 A：SVG + foreignObject（本页采用这条）
+       把卡片 DOM 克隆一份，连同样式规则一起塞进 <svg><foreignObject>，
+       让浏览器照常排版，再把整张 SVG 当图片画进 canvas。
+       优点：排版、圆角、字体、换行全部由浏览器完成，和屏幕上几乎一致，
+             代码量小，改样式不用同步改两套。
+       限制：foreignObject 里的内容不能引用外部资源——外链图片、外链
+             样式表一律不加载（本页头像/配图本来就是 data URL，正好；
+             CSS 也在这里被抽成全量内联 <style>）；
+             部分 CSS 在 SVG 环境里不完全生效，@media 直接跳过；
+             Safari 历史上对 foreignObject 支持不稳，容易整块空白。
+
+     方案 B：手写 canvas 逐块绘制
+       用 ctx.arc 裁圆头像、ctx.fillText 逐行排版、按行高计算换行，
+       图标用路径或 SVG 转 image 再画。
+       优点：任何浏览器表现一致、像素级可控。
+       代价：CSS 里的排版规则要在 JS 里重写一遍（行高、省略号、圆角），
+             以后页面改样式还得改导出代码，两套容易走偏。
+
+     为什么要 ×2（2 倍分辨率）？
+       屏幕上 1 个 CSS 像素往往对应 2～3 个物理像素（devicePixelRatio）。
+       按 1 倍导出，手机上看就会被拉伸变虚。所以画布宽高乘 2，
+       SVG 也以 2 倍尺寸栅格化，导出的 PNG 在任何屏幕上都是清晰的。
+     ========================================================== */
+  var FONT_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', " +
+                   "'PingFang SC', 'Microsoft YaHei', sans-serif";
+  var exportRange = 'post';   // post | both
+  var exportPad = 48;         // 32 | 48 | 64
+
+  // 收集页面里所有 CSS 规则，内联进导出文档；@media 跳过
+  function collectCss() {
+    var out = [];
+    for (var i = 0; i < document.styleSheets.length; i++) {
+      var rules;
+      try {
+        rules = document.styleSheets[i].cssRules;
+      } catch (e) {
+        continue;             // 跨域样式表读不到规则，跳过
+      }
+      for (var j = 0; j < rules.length; j++) {
+        if (rules[j].type === CSSRule.MEDIA_RULE) continue;
+        out.push(rules[j].cssText);
+      }
+    }
+    return out.join('\n');
+  }
+
+  // 生成导出用的 SVG 字符串（1 倍坐标 + 2 倍尺寸，交给 SVG 自己缩放）
+  function buildExportSvg(range, pad, scale) {
+    var cardW = Math.round(postCard.getBoundingClientRect().width) || 600;
+
+    // 1) 临时容器：克隆要导出的卡片，插进文档才能量出真实高度
+    var temp = document.createElement('div');
+    temp.style.cssText = 'position:fixed;left:-9999px;top:0;width:' + cardW + 'px;' +
+                         'display:flex;flex-direction:column;gap:16px;';
+    var clones = [];
+    if (range === 'both') clones = [profileCard, postCard];
+    else clones = [postCard];
+
+    clones.forEach(function (card) {
+      var copy = card.cloneNode(true);
+      copy.removeAttribute('hidden');       // 「仅主页」视图下帖子是 hidden 的，导出要强制显示
+      temp.appendChild(copy);
+    });
+
+    document.body.appendChild(temp);
+    var height = Math.max(1, Math.ceil(temp.getBoundingClientRect().height));
+    var markup = temp.innerHTML;
+    document.body.removeChild(temp);
+
+    // 2) 组装导出 DOM：data-theme 挂在这一层，CSS 变量照样继承
+    var holder = document.createElement('div');
+    holder.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+    holder.setAttribute('data-theme', body.dataset.theme);
+    holder.setAttribute('style',
+      'display:flex;flex-direction:column;gap:16px;width:' + cardW + 'px;' +
+      'font-family:' + FONT_STACK + ';color:var(--text);');
+
+    var styleEl = document.createElement('style');
+    styleEl.textContent = collectCss();    // 所有样式内联，不依赖外部 CSS
+    holder.appendChild(styleEl);
+    holder.insertAdjacentHTML('beforeend', markup);
+
+    var outW = cardW + pad * 2;
+    var outH = height + pad * 2;
+    var bg = getComputedStyle(body).getPropertyValue('--page-bg').trim() || '#000';
+
+    var xml = new XMLSerializer().serializeToString(holder);
+    var svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="' + outW * scale + '" height="' + outH * scale + '" ' +
+        'viewBox="0 0 ' + outW + ' ' + outH + '">' +
+        '<rect width="' + outW + '" height="' + outH + '" fill="' + bg + '"/>' +
+        '<foreignObject x="' + pad + '" y="' + pad + '" width="' + cardW + '" height="' + height + '">' +
+          xml +
+        '</foreignObject>' +
+      '</svg>';
+
+    return { svg: svg, w: outW, h: outH, bg: bg };
+  }
+
+  function stamp() {
+    var d = new Date();
+    return '' + d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) +
+           '-' + pad2(d.getHours()) + pad2(d.getMinutes());
+  }
+
+  function exportCard() {
+    var SCALE = 2;
+    var spec = buildExportSvg(exportRange, exportPad, SCALE);
+    var img = new Image();
+    var note = $('exportNote');
+    note.textContent = '正在生成…';
+
+    img.onload = function () {
+      var canvas = document.createElement('canvas');
+      canvas.width = spec.w * SCALE;
+      canvas.height = spec.h * SCALE;
+      var ctx = canvas.getContext('2d');
+
+      // 先铺主题底色：SVG 里也有 rect，这里是双保险，
+      // 保证导出的 PNG 不会有透明底、也不会出现白边
+      ctx.fillStyle = spec.bg;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob(function (blob) {
+        if (!blob) { note.textContent = '生成失败'; return; }
+        var a = document.createElement('a');
+        var url = URL.createObjectURL(blob);
+        a.href = url;
+        a.download = 'x-post-' + stamp() + '.png';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+        note.textContent = '已导出 PNG，自动进入视频';
+        // 自动进入视频流程
+        if (window._videoPlayer) {
+          window._videoPlayer.handleImage(blob);
+        } else {
+          console.error('_videoPlayer not found');
+        }
+      }, 'image/png');
+    };
+
+    img.onerror = function () {
+      note.textContent = 'SVG 渲染失败';
+      console.error('导出失败：foreignObject 转图片时出错');
+    };
+
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(spec.svg);
+  }
+
+  $('exportBtn').addEventListener('click', function () {
+    flash(this);
+    exportCard();
+  });
+
+  document.querySelectorAll('[data-export-range]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      exportRange = btn.dataset.exportRange;
+      document.querySelectorAll('[data-export-range]').forEach(function (b) {
+        b.classList.toggle('on', b === btn);
+      });
+    });
+  });
+
+  document.querySelectorAll('[data-pad]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      exportPad = Number(btn.dataset.pad);
+      document.querySelectorAll('[data-pad]').forEach(function (b) {
+        b.classList.toggle('on', b === btn);
+      });
+      $('exportNote').textContent = 'PNG · 2 倍 · 边距 ' + exportPad;
+    });
+  });
+
+  /* 首次渲染：时间就是打开页面这一刻 */
+  postTime = Date.now();
+  render();
+
+  // 每 30 秒重算一次相对时间：停在页面上也能看到「刚刚 → 1分钟前」
+  setInterval(function () {
+    if (composing) return;
+    render();
+  }, 30000);
+
+  /* ==========================================================
+     10. 翻译演示卡（v1.1.0 新增 · 纯追加段）
+     ----------------------------------------------------------
+     这一整段都是新代码，不修改上面任何函数 / 分支 / 变量：
+       · 现有 render() 不碰，翻译卡有自己的 trRender()；
+       · 现有 viewButtons 监听器不碰，另外叠加一个管翻译卡显隐；
+       · 现有 buildExportSvg() 的 clones 不碰，翻译卡天然不进 PNG；
+       · 现有 composing 变量直接复用（同一函数作用域），中文合成期一起跳过。
+
+     【本课教学点】给一个「不许改旧代码」的页面接新功能，靠的是
+       addEventListener 可挂多个监听器（事件叠加）+ MutationObserver 观察旧节点，
+       而不是回头去改旧函数 —— 旧功能的回归风险因此为零。
+     ========================================================== */
+  var trOriginalInput = $('trOriginalInput');
+  var trTranslatedInput = $('trTranslatedInput');
+  var trModeGroup = $('trModeGroup');
+  var translationCard = $('translationCard');
+
+  var trModeClassic = $('trModeClassic');
+  var trModeAuto = $('trModeAuto');
+  var trOriginalClassic = $('trOriginalClassic');
+  var trTranslatedClassic = $('trTranslatedClassic');
+  var trTranslatedBox = $('trTranslatedBox');
+  var trTranslateBtn = $('trTranslateBtn');
+  var trAutoBody = $('trAutoBody');
+  var trShowOriginalBtn = $('trShowOriginalBtn');
+
+  var trDisplayName = $('trDisplayName');
+  var trHandleText = $('trHandleText');
+  var trVerifiedBadge = $('trVerifiedBadge');
+  var trTimeText = $('trTimeText');
+  var trAvatarImg = $('trAvatarImg');
+  var trAvatarLetter = $('trAvatarLetter');
+
+  var trMode = 'classic';       // classic | auto
+  var trClassicOpen = false;    // 经典版：译文是否已展开
+  var trShowOriginal = false;   // 自动版：是否正在显示英文原文
+
+  /* 10.1 两栏输入 → 卡里的原文 / 译文，实时同步。
+         用 textContent 而不是 innerHTML，和现有 render() 同一条安全约定。 */
+  function trRender() {
+    var original = trOriginalInput.value;
+    var translated = trTranslatedInput.value;
+    trOriginalClassic.textContent = original;
+    trTranslatedClassic.textContent = translated;
+    // 自动版正文：显示原文还是译文，由交互状态决定
+    trAutoBody.textContent = trShowOriginal ? original : translated;
+  }
+
+  [trOriginalInput, trTranslatedInput].forEach(function (el) {
+    el.addEventListener('compositionstart', function () { composing = true; });
+    el.addEventListener('compositionend', function () { composing = false; trRender(); });
+    el.addEventListener('input', function () { if (composing) return; trRender(); });
+  });
+
+  /* 10.2 头部跟随现有主数据：昵称 / handle / 认证 / 时间。
+         不改 render()，改用「在现有控件上叠加监听」的方式同步。 */
+  function trSyncHeader() {
+    var name = nameInput.value.trim() || '未命名';
+    trDisplayName.textContent = name;
+    trHandleText.textContent = '@' + handleInput.value.trim().replace(/^@+/, '');
+    trVerifiedBadge.hidden = !verifiedToggle.checked;
+    trTimeText.textContent = timeText.textContent;   // 复用现有卡算好的相对时间
+    trAvatarLetter.textContent = Array.from(name)[0] || '?';
+  }
+
+  [nameInput, handleInput].forEach(function (el) {
+    el.addEventListener('input', function () { if (composing) return; trSyncHeader(); });
+    el.addEventListener('compositionend', trSyncHeader);
+  });
+  verifiedToggle.addEventListener('change', trSyncHeader);
+  // 「随机 / 恢复示例」会改昵称、handle、时间：叠加一个监听器，
+  // setTimeout 0 保证排在原监听器（先 render）之后，读到的是新值。
+  ['rollBtn', 'resetBtn'].forEach(function (id) {
+    $(id).addEventListener('click', function () { setTimeout(trSyncHeader, 0); });
+  });
+
+  /* 10.3 头像跟随：不改 setAvatarImage()，用 MutationObserver 盯旧头像节点。
+         无论「字母 / 本地上传 / 在线生成」哪条路径，最终都会改 avatarImg 的
+         src / hidden，观察者都能捕获，翻译卡头像自动同步。 */
+  function trSyncAvatar() {
+    var src = avatarImg.getAttribute('src');
+    var has = !!src && !avatarImg.hidden;
+    if (has) trAvatarImg.src = src;
+    else trAvatarImg.removeAttribute('src');
+    trAvatarImg.hidden = !has;
+    trAvatarLetter.hidden = has;
+  }
+  if (typeof MutationObserver === 'function') {
+    new MutationObserver(trSyncAvatar).observe(avatarImg, {
+      attributes: true, attributeFilter: ['src', 'hidden']
+    });
+  }
+
+  /* 10.4 交互：经典版「翻译帖子 / 隐藏翻译」 */
+  trTranslateBtn.addEventListener('click', function () {
+    trClassicOpen = !trClassicOpen;
+    trTranslatedBox.hidden = !trClassicOpen;
+    trTranslateBtn.textContent = trClassicOpen ? '隐藏翻译' : '翻译帖子';
+    flash(this);
+  });
+
+  /* 10.5 交互：自动版「显示原文 / 显示翻译」 */
+  trShowOriginalBtn.addEventListener('click', function () {
+    trShowOriginal = !trShowOriginal;
+    trShowOriginalBtn.textContent = trShowOriginal ? '显示翻译' : '显示原文';
+    trAutoBody.textContent = trShowOriginal ? trOriginalInput.value : trTranslatedInput.value;
+    trAutoBody.setAttribute('data-region', trShowOriginal ? '英文原文' : '中文译文');
+    trAutoBody.classList.toggle('tr-r-orig', trShowOriginal);
+    trAutoBody.classList.toggle('tr-r-trans', !trShowOriginal);
+    flash(this);
+  });
+
+  /* 10.6 形态切换：两种 X 翻译界面由左侧 GUI 按钮组切换。
+         切换时把各自的交互状态复位，保证每次演示都从干净初始态开始。 */
+  function trSetMode(mode) {
+    trMode = mode;
+    trModeClassic.hidden = (mode !== 'classic');
+    trModeAuto.hidden = (mode !== 'auto');
+    // 复位
+    trClassicOpen = false;
+    trTranslatedBox.hidden = true;
+    trTranslateBtn.textContent = '翻译帖子';
+    trShowOriginal = false;
+    trShowOriginalBtn.textContent = '显示原文';
+    trAutoBody.setAttribute('data-region', '中文译文');
+    trAutoBody.classList.remove('tr-r-orig');
+    trAutoBody.classList.add('tr-r-trans');
+    trRender();
+    Array.prototype.forEach.call(trModeGroup.querySelectorAll('button'), function (b) {
+      b.classList.toggle('on', b.dataset.trMode === mode);
+    });
+  }
+  Array.prototype.forEach.call(trModeGroup.querySelectorAll('button'), function (btn) {
+    btn.addEventListener('click', function () {
+      trSetMode(btn.dataset.trMode);
+      flash(btn);
+    });
+  });
+
+  /* 10.7 视图切换叠加：不改现有 viewButtons 监听器，另挂一个管翻译卡。
+         翻译卡是「帖子」的一部分，跟 postCard 同显隐：
+         选「主页头部」时隐藏，其余显示。 */
+  document.querySelectorAll('[data-view-btn]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      translationCard.hidden = (btn.dataset.viewBtn === 'profile');
+    });
+  });
+
+  /* 10.8 互动数字同步：翻译卡是「同一份数据的另一条帖子」，
+         5 个数字跟着左侧输入实时变，改一处两张卡一起变。
+         仍然不改 render() —— 在现有 5 个数字输入框上叠加 input 监听即可。
+         「随机 / 恢复示例」是直接写 .value（不会触发 input 事件），
+         所以再叠一个 click 监听，setTimeout 0 排在原监听器之后读新值。 */
+  var trCountMap = [
+    ['trCountReply', replyInput],
+    ['trCountRepost', repostInput],
+    ['trCountLike', likeInput],
+    ['trCountView', viewInput],
+    ['trCountBookmark', bookmarkInput]
+  ];
+  function trSyncCounts() {
+    trCountMap.forEach(function (pair) {
+      $(pair[0]).textContent = formatCount(pair[1].value);
+    });
+  }
+  [replyInput, repostInput, likeInput, viewInput, bookmarkInput].forEach(function (el) {
+    el.addEventListener('input', trSyncCounts);
+  });
+  ['rollBtn', 'resetBtn'].forEach(function (id) {
+    $(id).addEventListener('click', function () { setTimeout(trSyncCounts, 0); });
+  });
+
+  /* 10.9 初始化（此时上面的 render() 已跑过，timeText 有值） */
+  trSyncHeader();
+  trSyncAvatar();
+  trSyncCounts();
+  trSetMode('classic');   // 默认经典手动版
+
+  /* ==========================================================
+     11. 编辑面板分组导航与折叠（v1.2.0 · 纯追加段）
+     ----------------------------------------------------------
+     问题：4 个分组、20+ 字段挤在一个限高且内部滚动的 sticky 面板里，
+     找字段要一直往下拉。解法两步：
+       P0 顶部吸顶导航，点一下直接滚到对应分组；
+       P1 分组可折叠，默认收起两组，并提供「全部收起」一键。
+     全程不改旧 DOM / 旧 CSS / 旧函数：折叠只靠运行时 classList，
+     导航只是 addEventListener，滚动用容器 scrollTo（窄屏退回 scrollIntoView）。
+     ========================================================== */
+  var nvEditor = document.querySelector('.editor');
+  var nvGroups = Array.prototype.slice.call(nvEditor.querySelectorAll('.ed-group'));
+  var nvBar = $('nvBar');
+  var nvBtns = Array.prototype.slice.call(nvBar.querySelectorAll('[data-nv-target]'));
+  var nvToggleAll = $('nvToggleAll');
+
+  // P1：默认收起「共用信息」「主页头部」，展开「帖子」「翻译卡」
+  [0, 1].forEach(function (i) { nvGroups[i].classList.add('nv-collapsed'); });
+  document.body.classList.add('nv-on');
+
+  var nvLockUntil = 0;   // 点导航后的平滑滚动期间，禁止 scroll 监听覆盖高亮
+
+  function nvSetActive(i) {
+    nvBtns.forEach(function (b) {
+      b.classList.toggle('on', Number(b.dataset.nvTarget) === i);
+    });
+  }
+
+  function nvScrollTo(i) {
+    nvGroups[i].classList.remove('nv-collapsed');   // 先展开，否则滚过去只有一行标题
+    nvSetActive(i);
+    nvLockUntil = Date.now() + 900;                 // 平滑滚动期间锁住高亮
+    if (window.matchMedia && window.matchMedia('(min-width: 881px)').matches) {
+      var top = nvGroups[i].offsetTop - nvBar.offsetHeight - 8;
+      if (nvEditor.scrollTo) nvEditor.scrollTo({ top: top, behavior: 'smooth' });
+      else nvEditor.scrollTop = top;
+    } else {
+      nvGroups[i].scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
+  nvBtns.forEach(function (b) {
+    b.addEventListener('click', function () { nvScrollTo(Number(b.dataset.nvTarget)); });
+  });
+
+  // 点分组标题切换折叠（事件叠加，旧节点结构一个属性都不加）
+  nvGroups.forEach(function (g, i) {
+    var title = g.querySelector('.ed-group-title');
+    if (!title) return;
+    title.addEventListener('click', function () {
+      g.classList.toggle('nv-collapsed');
+      nvSetActive(i);
+    });
+  });
+
+  // 一键全收 / 全展
+  nvToggleAll.addEventListener('click', function () {
+    var allCollapsed = nvGroups.every(function (g) {
+      return g.classList.contains('nv-collapsed');
+    });
+    nvGroups.forEach(function (g) { g.classList.toggle('nv-collapsed', !allCollapsed); });
+    this.textContent = allCollapsed ? '全部收起' : '全部展开';
+  });
+
+  // 滚动时更新高亮，让导航始终指向当前可视分组
+  nvEditor.addEventListener('scroll', function () {
+    if (Date.now() < nvLockUntil) return;           // 导航点击后的滚动不抢高亮
+    var line = nvEditor.scrollTop + nvBar.offsetHeight + 24;
+    var idx = 0;
+    nvGroups.forEach(function (g, i) { if (g.offsetTop <= line) idx = i; });
+    nvSetActive(idx);
+  }, { passive: true });
+
+  /* ==========================================================
+     12. 受限就地编辑（v1.2.0 · 纯追加段）
+     ----------------------------------------------------------
+     【为什么"受限"】本页核心教学点是「左边数据 → 右边视图」的单向流。
+     全面改成右侧就地编辑会破坏这个对照关系，还要把 render() 改成双向。
+     所以只做：GUI 开关默认关 + 两处纯文本 + 双击进入 + 提交后写回原 input
+     并 dispatch('input')，让改动仍走老的 render() / trRender() 通道。
+
+     【三条隔离纪律】
+       1) 不给卡片挂 contenteditable，编辑态是 body 下的独立浮层 —— 不碰卡片 DOM；
+       2) 浮层不在 buildExportSvg() 的 clones 里 —— 不进 PNG；
+       3) 提示虚线框的规则带 body.ie-on 前缀，导出克隆的 DOM 里没有 body。
+     ========================================================== */
+  var ieToggle = $('ieToggle');
+  var ieTargets = [
+    { el: $('postBody'), input: bodyInput },
+    { el: $('trTranslatedClassic'), input: trTranslatedInput },
+    { el: $('trAutoBody'), input: trTranslatedInput }
+  ];
+  var ieActive = null;       // 当前编辑会话
+  var ieComposing = false;   // 浮层自己的中文输入法合成标志
+  var ieScrollGuardUntil = 0;// 浮层刚打开时忽略 scroll 的截止时间
+
+  function ieEnabled() { return ieToggle.checked; }
+
+  function ieCommit() {
+    if (!ieActive) return;
+    if (ieComposing) { setTimeout(ieCommit, 60); return; }  // 拼音未结束，稍后再存
+    var a = ieActive;
+    ieActive = null;               // 先置空：remove 触发的 blur 进来会被直接挡掉
+    var value = a.textarea.value;
+    a.overlay.remove();
+    composing = false;             // 复用现有 IME 标志，保证老通道这次一定渲染
+    // 写回唯一数据源，再手动派发 input —— 老通道会重绘所有卡片
+    if (a.input.value !== value) {
+      a.input.value = value;
+      a.input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+
+  function ieCancel() {
+    if (!ieActive) return;
+    var a = ieActive;
+    ieActive = null;
+    a.overlay.remove();
+  }
+
+  function ieOpen(el, input) {
+    if (!ieEnabled()) return;
+    if (ieActive) ieCommit();
+    // 自动版正在显示英文原文时不给编辑，避免把原文当成译文写回
+    if (el.id === 'trAutoBody' && trShowOriginal) return;
+
+    var r = el.getBoundingClientRect();
+    var cs = getComputedStyle(el);
+    var overlay = document.createElement('div');
+    overlay.className = 'ie-overlay';
+    overlay.style.left = r.left + 'px';
+    overlay.style.top = r.top + 'px';
+    overlay.style.width = r.width + 'px';
+    overlay.style.height = Math.max(r.height, 46) + 22 + 'px';  // +22 给底部整宽提示条
+
+    var ta = document.createElement('textarea');
+    ta.className = 'ie-textarea';
+    ta.value = el.textContent;
+    ta.spellcheck = false;
+    // 复制目标的关键排版，双击瞬间不跳字
+    ['fontSize', 'fontFamily', 'fontWeight', 'lineHeight', 'letterSpacing',
+     'padding', 'whiteSpace', 'overflowWrap'].forEach(function (k) {
+      ta.style[k] = cs[k];
+    });
+
+    var tip = document.createElement('div');
+    tip.className = 'ie-tip';
+    tip.textContent = '点外面保存 · Esc 取消 · Ctrl+Enter 保存';
+    overlay.appendChild(ta);
+    overlay.appendChild(tip);
+    document.body.appendChild(overlay);
+
+    ieActive = { el: el, input: input, overlay: overlay, textarea: ta };
+    ieScrollGuardUntil = Date.now() + 400;   // 打开瞬间忽略自动滚动，见文末 scroll 监听
+
+    ta.addEventListener('compositionstart', function () { ieComposing = true; });
+    ta.addEventListener('compositionend', function () { ieComposing = false; });
+    ta.addEventListener('blur', ieCommit);
+    ta.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { e.preventDefault(); ieCancel(); }
+      else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault(); ieCommit();
+      }
+    });
+    try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+  }
+
+  // 事件叠加：旧节点一个属性都不加，只多挂一个 dblclick 监听
+  ieTargets.forEach(function (t) {
+    t.el.addEventListener('dblclick', function () { ieOpen(t.el, t.input); });
+  });
+
+  ieToggle.addEventListener('change', function () {
+    if (this.checked) document.body.classList.add('ie-on');
+    else { document.body.classList.remove('ie-on'); ieCommit(); }
+  });
+
+  // 导出兜底：点「导出图片」时 textarea 会先 blur 提交，但保险起见
+  // 在 document 捕获阶段再提交一次，保证 exportCard() 读到刚改完的文本。
+  // 点在浮层内部不提交，否则一点输入框就退出编辑。
+  document.addEventListener('click', function (e) {
+    if (!ieActive) return;
+    if (ieActive.overlay.contains(e.target)) return;
+    ieCommit();
+  }, true);
+
+  // 浮层是 fixed 定位，滚动后不会跟着目标走；一滚动就保存并退出，符合直觉。
+  // 三个例外：① 打开瞬间 focus / setSelectionRange 触发的自动滚动（用时间窗挡掉，
+  // 否则真人双击后浮层会被自己关掉）；② textarea 内部的正常文本滚动；
+  // ③ 浮层自身滚动。只有真正滚动了外部页面 / 左侧编辑面板才提交退出。
+  window.addEventListener('scroll', function (e) {
+    if (!ieActive) return;
+    if (Date.now() < ieScrollGuardUntil) return;
+    if (e.target === ieActive.textarea || ieActive.overlay.contains(e.target)) return;
+    ieCommit();
+  }, true);
+
+  /* ==========================================================
+     13. 简易/专家双模式（v2.0.0 · 纯追加段）
+     ------------------------------------------------------------
+     简易模式（新手默认）= 只留「昵称 / 正文 / 配图 / 生成视频」。
+     隐藏全部靠 body.simple-mode + CSS（display:none），元素与
+     JS 管线不动；专家模式 = v1.x 行为一字不差。
+
+     【导出防护（审核要点）】简易模式下主页卡被 CSS 隐藏，若
+     exportRange 残留 'both'，克隆进导出容器量高会得到 0 ——
+     这里包装 exportCard 强制 range='post'，而不是只藏按钮。
+     ========================================================== */
+  var MODE_KEY = 'pv-mode';
+  var modeBtns = Array.prototype.slice.call(document.querySelectorAll('[data-mode-btn]'));
+  var onboardBar = $('onboardBar');
+  var onboardClose = $('onboardClose');
+
+  var handleTouched = false;   // 专家模式手动改过 Handle 后，简易模式不再自动跟随
+
+  function storageGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function storageSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+  /* Handle 自动跟随昵称：中文等非 ASCII 直接用昵称原文（@张三），
+     ASCII 转小写去空格；转不出可读结果保持现值。
+     （禁用 rollHandle——它会把中文剥成 someone123。）*/
+  function autoHandle() {
+    if (!body.classList.contains('simple-mode') || handleTouched) return;
+    var name = nameInput.value.trim();
+    if (!name) return;
+    if (/[^ -~]/.test(name)) {
+      handleInput.value = name;
+    } else {
+      var slug = name.toLowerCase().replace(/\s+/g, '');
+      if (slug) handleInput.value = slug;
+    }
+  }
+
+  /* 正文过长提醒：卡片在 1080×1920 画面里按 contain 缩放，
+     长文会整体缩小导致文字看不清（视频只有 10 秒静帧）。 */
+  var bodyLenHint = document.createElement('p');
+  bodyLenHint.id = 'bodyLenHint';
+  function checkBodyLen() {
+    var est = 0;
+    bodyInput.value.split('\n').forEach(function (l) {
+      est += Math.max(1, Math.ceil(l.length / 26));
+    });
+    if (est > 10) {
+      bodyLenHint.textContent = '⚠ 正文约 ' + est + ' 行，偏长：视频里卡片会整体缩小，文字可能看不清。';
+      bodyLenHint.style.display = 'block';
+    } else {
+      bodyLenHint.style.display = 'none';
+    }
+  }
+
+  function applyMode(mode, save) {
+    var simple = (mode === 'simple');
+    body.classList.toggle('simple-mode', simple);
+    modeBtns.forEach(function (b) {
+      b.classList.toggle('on', b.dataset.modeBtn === mode);
+    });
+
+    // CTA 文案与导出提示
+    $('exportBtn').textContent = simple ? '🎬 生成视频' : '导出图片';
+    $('exportNote').textContent = simple ? '自动保存图片 · 自动生成视频' : 'PNG · 2 倍';
+
+    // 布局统一：简易模式下「主题」切换并入生成工具条，与生成按钮同排；
+    // 专家模式移回预览工具条原位（记录原父节点与后继节点）
+    moveThemeGroup(simple);
+
+    // 分组标题与折叠：简易模式只留两组并强制展开（昵称/正文必须可见）
+    nvGroups.forEach(function (g, i) {
+      var t = g.querySelector('.ed-group-title');
+      if (t) t.textContent = simple ? ['发帖人', '', '帖子内容', ''][i] || t.textContent : g.dataset.origTitle || t.textContent;
+      if (simple) {
+        if (i === 0 || i === 2) g.classList.remove('nv-collapsed');
+      } else {
+        if (i === 0 || i === 1) g.classList.add('nv-collapsed');
+        if (i === 2 || i === 3) g.classList.remove('nv-collapsed');
+      }
+    });
+
+    // 预览：简易模式只看帖子卡（视频内容即导出内容）
+    if (simple) {
+      profileCard.hidden = true;
+      translationCard.hidden = true;
+      postCard.hidden = false;
+      viewButtons.forEach(function (b) { b.classList.remove('on'); });
+    } else {
+      profileCard.hidden = false;
+      translationCard.hidden = false;
+      viewButtons.forEach(function (b) {
+        b.classList.toggle('on', b.dataset.viewBtn === 'all');
+      });
+    }
+
+    if (save) storageSet(MODE_KEY, mode);
+
+    // 引导条跟随模式：简易且未点过「知道了」才显示
+    onboardBar.hidden = !simple || !!storageGet('pv-banner-x');
+  }
+
+  // 首次 applyMode 前缓存原始分组标题（专家模式恢复用）
+  nvGroups.forEach(function (g) {
+    var t = g.querySelector('.ed-group-title');
+    if (t) g.dataset.origTitle = t.textContent;
+  });
+
+  /* 主题切换组在两种模式间搬运：
+     简易 → 生成工具条（生成按钮右侧），专家 → 预览工具条原位。
+     直接 DOM move，两处监听器都随节点走，无需重新绑定。*/
+  var themeGroupEl = null;
+  var themeGroupHome = null;
+  (function findThemeGroup() {
+    var groups = document.querySelectorAll('.toolbar[aria-label="预览控制"] .toolbar-group');
+    for (var i = 0; i < groups.length; i++) {
+      if (groups[i].querySelector('[data-theme-btn]')) {
+        themeGroupEl = groups[i];
+        themeGroupHome = { parent: themeGroupEl.parentNode, next: themeGroupEl.nextSibling };
+        return;
+      }
+    }
+  })();
+  function moveThemeGroup(simple) {
+    if (!themeGroupEl) return;
+    if (simple) {
+      var exportToolbar = document.querySelector('.toolbar.toolbar-export');
+      var note = $('exportNote');
+      if (themeGroupEl.parentNode !== exportToolbar) {
+        exportToolbar.insertBefore(themeGroupEl, note);
+      }
+    } else if (themeGroupHome && themeGroupEl.parentNode !== themeGroupHome.parent) {
+      themeGroupHome.parent.insertBefore(themeGroupEl, themeGroupHome.next);
+    }
+  }
+
+  modeBtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      applyMode(b.dataset.modeBtn, true);
+      flash(b);
+    });
+  });
+
+  onboardClose.addEventListener('click', function () {
+    onboardBar.hidden = true;
+    storageSet('pv-banner-x', '1');
+  });
+
+  // 事件叠加：不改旧监听。昵称联动 handle 后手动补一次渲染与翻译卡同步
+  nameInput.addEventListener('input', function () {
+    autoHandle();
+    render();
+    trSyncHeader();
+  });
+  handleInput.addEventListener('input', function () { handleTouched = true; });
+  bodyInput.addEventListener('input', checkBodyLen);
+
+  // 导出防护：简易模式强制只导帖子卡（主页卡被隐藏，'both' 会克隆出 0 高卡）
+  var _origExportCard = exportCard;
+  exportCard = function () {
+    if (document.body.classList.contains('simple-mode')) exportRange = 'post';
+    _origExportCard();
+  };
+
+  // 初始化：模式 + 引导条 + 正文提醒
+  applyMode(storageGet(MODE_KEY) === 'expert' ? 'expert' : 'simple', false);
+  if (!storageGet('pv-banner-x') && body.classList.contains('simple-mode')) {
+    onboardBar.hidden = false;
+  }
+  bodyInput.parentNode.insertBefore(bodyLenHint, bodyInput.nextSibling);
+  checkBodyLen();
+
+  /* 首屏随机：昵称 / Handle / 简介 / 粉丝 / 互动数字每次打开都换新，
+     数字档位偏大（像有热度的帖子）。「恢复示例」仍回到固定样例。
+     翻译卡头部与数字需要 setTimeout 补一次同步（同「随机」按钮的逻辑）。*/
+  applyRandom();
+  setTimeout(function () {
+    trSyncHeader();
+    trSyncCounts();
+  }, 0);
+})();
+</script>
+
+<!-- ============================================================
+     视频生成区：导出图片后自动出现，WebCodecs 秒级生成 MP4
+     ------------------------------------------------------------
+     产品逻辑（非教学）：
+       1) 导出图片 → 自动进入本区 → 自动开始生成视频（无感、无需等待确认）
+       2) 可选背景音乐：选择后自动重新生成；音量拖动后防抖重新生成
+       3) 生成完成 → 下载按钮直接可用（视频是现成的，不再现场录制）
+     编码路径：
+       快速：WebCodecs(H.264 + AAC) + mp4-muxer → 1~3 秒离线完成
+       兜底：MediaRecorder 实时录制（老浏览器自动降级）
+     ============================================================ -->
+<style>
+  #videoPlayerSection { max-width: 400px; margin: 32px auto; padding: 20px; background: var(--editor-bg); border: 1px solid var(--border); border-radius: 14px; }
+  #videoPlayerSection h2 { font-size: 16px; margin: 0 0 4px; }
+  #videoSpec { font-size: 11px; color: var(--muted); margin: 0 0 12px; letter-spacing: .02em; }
+  #videoWrapper {
+    position: relative; width: 220px; aspect-ratio: 9/16;
+    background: var(--page-bg); border-radius: 8px; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 12px; border: 1px solid var(--border);
+  }
+  #videoImg { max-width: 100%; max-height: 100%; width: auto; height: auto; display: block; }
+  #videoEl { max-width: 100%; max-height: 100%; display: none; border-radius: 4px; background: transparent; }
+  #videoStatus { font-size: 13px; text-align: center; margin-bottom: 12px; min-height: 18px; color: var(--muted); line-height: 1.5; }
+  #musicRow { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  #musicBtn, #clearMusicBtn {
+    padding: 6px 10px; font-size: 12px; border-radius: 6px;
+    border: 1px solid var(--input-border); background: transparent;
+    color: var(--text); cursor: pointer; white-space: nowrap;
+  }
+  #musicBtn:hover, #clearMusicBtn:hover { border-color: var(--blue); color: var(--blue); }
+  #musicName { font-size: 12px; color: var(--muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #volumeRow { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
+  #volumeRow input[type=range] { flex: 1; accent-color: var(--blue); }
+  #btnRow { display: flex; gap: 8px; }
+  #btnRow button {
+    flex: 1; padding: 10px 6px; border-radius: 8px; font-size: 13px; font-weight: 600;
+    cursor: pointer; border: 1px solid var(--border); background: var(--card-bg); color: var(--text);
+  }
+  #btnRow button:disabled { opacity: .5; cursor: not-allowed; }
+  #downloadBtn { background: var(--green); color: #fff; border: none; }
+  #recCanvas { position: absolute; left: -9999px; top: -9999px; }
+</style>
+<div id="videoPlayerSection" style="display:none;">
+  <h2>🎬 视频生成</h2>
+  <div id="videoSpec">10 秒 · 9:16 竖屏 · 1080×1920 · MP4</div>
+  <div id="videoWrapper"><img id="videoImg" alt=""><video id="videoEl" controls loop playsinline></video></div>
+  <div id="videoStatus">准备中…</div>
+  <div id="musicRow">
+    <button id="musicBtn" type="button">🎵 选择背景音乐</button>
+    <button id="clearMusicBtn" type="button" hidden title="移除音乐">✕</button>
+    <span id="musicName">未选择</span>
+    <input id="musicFile" type="file" accept="audio/*" hidden>
+  </div>
+  <div id="volumeRow" hidden>
+    <span>音量</span>
+    <input id="musicVolume" type="range" min="0" max="100" value="80">
+    <span id="volumeVal">80%</span>
+  </div>
+  <div id="btnRow">
+    <button id="downloadBtn" disabled>⬇ 下载视频</button>
+    <button id="regenBtn" disabled title="修改音乐/音量后会自动重新生成；也可手动触发">↻ 重新生成</button>
+    <button id="reuploadBtn" title="移除图片，等待下一次导出">✕ 移除</button>
+  </div>
+  <canvas id="recCanvas"></canvas>
+</div>
+
+<script src="vendor/mp4-muxer.min.js"></script>
+<script>
+(function() {
+  'use strict';
+  var DUR = 10;               // 视频时长（秒）
+  var FPS = 30;
+  var W = 1080, H = 1920;     // 输出分辨率（9:16）
+  var SR = 44100;             // 音频采样率
+
+  var section = document.getElementById('videoPlayerSection');
+  var previewImg = document.getElementById('videoImg');
+  var videoEl = document.getElementById('videoEl');
+  var statusEl = document.getElementById('videoStatus');
+  var downloadBtn = document.getElementById('downloadBtn');
+  var regenBtn = document.getElementById('regenBtn');
+  var removeBtn = document.getElementById('reuploadBtn');
+  var musicBtn = document.getElementById('musicBtn');
+  var musicClearBtn = document.getElementById('clearMusicBtn');
+  var musicNameEl = document.getElementById('musicName');
+  var musicFileInput = document.getElementById('musicFile');
+  var volumeRow = document.getElementById('volumeRow');
+  var volumeSlider = document.getElementById('musicVolume');
+  var volumeVal = document.getElementById('volumeVal');
+  var canvas = document.getElementById('recCanvas');
+  var ctx = canvas.getContext('2d');
+
+  var state = {
+    imgEl: null,           // 当前图片
+    imgLoaded: false,
+    bgColor: '#0a0e13',    // 与页面主题一致的填充背景色
+    music: null,           // AudioBuffer
+    volume: 0.8,
+    videoBlob: null,
+    generating: false
+  };
+  var regenTimer = null;
+  var genSeq = 0;          // 生成序号：新的一次生成会使旧的进行中结果作废
+
+  function setStatus(text, color) {
+    statusEl.textContent = text;
+    statusEl.style.color = color || 'var(--muted)';
+  }
+  function refreshBgColor() {
+    var v = getComputedStyle(document.body).getPropertyValue('--page-bg').trim();
+    if (v) state.bgColor = v;
+  }
+
+  /* 把当前图片按 contain 居中画到 1080×1920 画布上，空白处铺主题背景色 */
+  function drawPoster() {
+    refreshBgColor();
+    ctx.fillStyle = state.bgColor;
+    ctx.fillRect(0, 0, W, H);
+    if (!state.imgEl) return;
+    var iw = state.imgEl.naturalWidth, ih = state.imgEl.naturalHeight;
+    var scale = Math.min(W / iw, H / ih);
+    var dw = Math.round(iw * scale), dh = Math.round(ih * scale);
+    ctx.drawImage(state.imgEl, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  }
+
+  /* ---------- 背景音乐 ---------- */
+  async function loadMusicFile(file) {
+    if (!file) return;
+    try {
+      setStatus('🎵 解析音乐中…', 'var(--blue)');
+      var buf = await file.arrayBuffer();
+      var ac = new (window.AudioContext || window.webkitAudioContext)();
+      var decoded = await ac.decodeAudioData(buf);
+      try { ac.close(); } catch (e) {}
+      state.music = decoded;
+      musicNameEl.textContent = file.name;
+      musicNameEl.title = file.name + ' · ' + decoded.duration.toFixed(1) + 's';
+      musicClearBtn.hidden = false;
+      volumeRow.hidden = false;
+      scheduleRegen(100);
+    } catch (e) {
+      setStatus('❌ 音乐解析失败：' + (e.message || e), 'var(--pink)');
+    }
+  }
+  function clearMusic() {
+    state.music = null;
+    musicNameEl.textContent = '未选择';
+    musicNameEl.title = '';
+    musicClearBtn.hidden = true;
+    volumeRow.hidden = true;
+    musicFileInput.value = '';
+    scheduleRegen(100);
+  }
+  function scheduleRegen(delay) {
+    if (regenTimer) clearTimeout(regenTimer);
+    regenTimer = setTimeout(function () { regenTimer = null; generate(); }, delay || 150);
+  }
+
+  /* 用 OfflineAudioContext 统一处理：裁剪到 10s / 循环补齐 / 音量 / 尾部淡出 */
+  async function renderMusicTrack(totalSec) {
+    var OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    var frames = Math.ceil(totalSec * SR);
+    var oac = new OAC(2, frames, SR);
+    var src = oac.createBufferSource();
+    src.buffer = state.music;
+    src.loop = state.music.duration < totalSec - 0.05;
+    var gain = oac.createGain();
+    var v = state.volume;
+    gain.gain.setValueAtTime(v, 0);
+    gain.gain.setValueAtTime(v, Math.max(0, totalSec - 0.8));
+    gain.gain.linearRampToValueAtTime(0.0001, totalSec);
+    src.connect(gain);
+    gain.connect(oac.destination);
+    src.start(0);
+    return await oac.startRendering();
+  }
+
+  /* ---------- 快速路径：WebCodecs 离线编码（约 1~3 秒）---------- */
+  async function encodeFast() {
+    var candidates = ['avc1.64002a', 'avc1.42002a', 'avc1.420028'];
+    var videoCodec = null;
+    for (var i = 0; i < candidates.length; i++) {
+      try {
+        var sup = await VideoEncoder.isConfigSupported({
+          codec: candidates[i], width: W, height: H,
+          bitrate: 6000000, framerate: FPS
+        });
+        if (sup.supported) { videoCodec = candidates[i]; break; }
+      } catch (e) {}
+    }
+    if (!videoCodec) throw new Error('H.264 编码不可用');
+
+    var muxer = new Mp4Muxer.Muxer({
+      target: new Mp4Muxer.ArrayBufferTarget(),
+      video: { codec: 'avc', width: W, height: H },
+      audio: state.music ? { codec: 'aac', numberOfChannels: 2, sampleRate: SR } : undefined,
+      fastStart: 'in-memory'
+    });
+
+    /* 视频：静态画面，编 10s × 30fps（相同内容增量帧极小，编码很快）*/
+    var vEnc = new VideoEncoder({
+      output: function (chunk, meta) { muxer.addVideoChunk(chunk, meta); },
+      error: function () {}
+    });
+    vEnc.configure({ codec: videoCodec, width: W, height: H, bitrate: 6000000, framerate: FPS });
+
+    drawPoster();
+    var frameDur = Math.round(1e6 / FPS);
+    var totalFrames = DUR * FPS;
+    for (var f = 0; f < totalFrames; f++) {
+      var frame = new VideoFrame(canvas, { timestamp: f * frameDur, duration: frameDur });
+      vEnc.encode(frame, { keyFrame: f % (FPS * 2) === 0 });
+      frame.close();
+      if (vEnc.encodeQueueSize > 20) {
+        await new Promise(function (r) { setTimeout(r, 0); });
+      }
+    }
+    await vEnc.flush();
+    vEnc.close();
+
+    /* 音频：AAC 立体声轨，与视频同时长 */
+    if (state.music) {
+      var aEnc = new AudioEncoder({
+        output: function (chunk, meta) { muxer.addAudioChunk(chunk, meta); },
+        error: function () {}
+      });
+      aEnc.configure({ codec: 'mp4a.40.2', sampleRate: SR, numberOfChannels: 2, bitrate: 128000 });
+      var track = await renderMusicTrack(DUR);
+      var L = track.getChannelData(0);
+      var R = track.numberOfChannels > 1 ? track.getChannelData(1) : L;
+      var chunkFrames = 24000, offset = 0;
+      while (offset < track.length) {
+        var n = Math.min(chunkFrames, track.length - offset);
+        var data = new Float32Array(n * 2);
+        data.set(L.subarray(offset, offset + n), 0);
+        data.set(R.subarray(offset, offset + n), n);
+        var ad = new AudioData({
+          format: 'f32-planar', sampleRate: SR, numberOfFrames: n,
+          numberOfChannels: 2, timestamp: Math.round(offset / SR * 1e6), data: data
+        });
+        aEnc.encode(ad);
+        ad.close();
+        offset += n;
+      }
+      await aEnc.flush();
+      aEnc.close();
+    }
+
+    muxer.finalize();
+    return new Blob([muxer.target.buffer], { type: 'video/mp4' });
+  }
+
+  /* ---------- 兜底路径：MediaRecorder 实时录制（老浏览器）---------- */
+  function encodeRealtime() {
+    return new Promise(function (resolve, reject) {
+      try {
+        drawPoster();
+        var stream = canvas.captureStream(FPS);
+        var audioCtx = null;
+        if (state.music && typeof AudioContext !== 'undefined') {
+          audioCtx = new AudioContext();
+          var srcNode = audioCtx.createBufferSource();
+          srcNode.buffer = state.music;
+          srcNode.loop = state.music.duration < DUR - 0.05;
+          var gain = audioCtx.createGain();
+          var v = state.volume;
+          var t0 = audioCtx.currentTime;
+          gain.gain.setValueAtTime(v, t0);
+          gain.gain.setValueAtTime(v, t0 + Math.max(0, DUR - 0.8));
+          gain.gain.linearRampToValueAtTime(0.0001, t0 + DUR);
+          srcNode.connect(gain);
+          var dest = audioCtx.createMediaStreamDestination();
+          gain.connect(dest);
+          var at = dest.stream.getAudioTracks()[0];
+          if (at) stream.addTrack(at);
+          srcNode.start();
+        }
+        var mimeType = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm';
+        var recorder = new MediaRecorder(stream, { mimeType: mimeType });
+        var chunks = [];
+        recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+        recorder.onstop = function () {
+          if (audioCtx) { try { audioCtx.close(); } catch (e) {} }
+          resolve(new Blob(chunks, { type: mimeType }));
+        };
+        recorder.onerror = function () { reject(new Error('实时录制失败')); };
+        recorder.start();
+        var drawTimer = setInterval(function () { drawPoster(); }, 1000 / FPS);
+        setTimeout(function () {
+          clearInterval(drawTimer);
+          recorder.stop();
+        }, DUR * 1000);
+      } catch (e) { reject(e); }
+    });
+  }
+
+  /* ---------- 生成入口：自动调用，失败自动降级 ---------- */
+  var videoUrl = null;
+  /* 生成完成后用 <video> 预览成品（可直接带音乐试听），海报图退居生成中显示 */
+  function showVideoPreview(blob) {
+    if (videoUrl) { URL.revokeObjectURL(videoUrl); videoUrl = null; }
+    videoUrl = URL.createObjectURL(blob);
+    videoEl.src = videoUrl;
+    videoEl.style.display = 'block';
+    previewImg.style.display = 'none';
+  }
+  function hideVideoPreview() {
+    if (videoUrl) { URL.revokeObjectURL(videoUrl); videoUrl = null; }
+    try { videoEl.pause(); } catch (e) {}
+    videoEl.removeAttribute('src');
+    videoEl.load();              // 彻底停止加载与播放，避免残留音视频
+    videoEl.style.display = 'none';
+    previewImg.style.display = '';
+  }
+
+  async function generate() {
+    if (!state.imgLoaded || state.generating) return;
+    var mySeq = ++genSeq;
+    state.generating = true;
+    state.videoBlob = null;
+    downloadBtn.disabled = true;
+    regenBtn.disabled = true;
+    hideVideoPreview();          // 重新生成期间先回到海报图
+
+    var fastOK = (typeof VideoEncoder !== 'undefined' && typeof Mp4Muxer !== 'undefined');
+    if (!fastOK) {
+      setStatus('⏳ 浏览器不支持快速编码，实时录制中（约 ' + DUR + ' 秒）…', 'var(--blue)');
+    } else {
+      setStatus('🎬 生成视频中' + (state.music ? '（含背景音乐）' : '') + '…', 'var(--blue)');
+    }
+
+    try {
+      var blob = fastOK ? await encodeFast() : await encodeRealtime();
+      if (mySeq !== genSeq) return;
+      state.videoBlob = blob;
+      downloadBtn.disabled = false;
+      showVideoPreview(blob);
+      setStatus('✅ 视频已生成 · ' + (blob.size / 1024 / 1024).toFixed(2) + ' MB' +
+                (state.music ? ' · 含音乐' : ''), 'var(--green)');
+    } catch (fastErr) {
+      if (mySeq !== genSeq) return;
+      if (typeof MediaRecorder !== 'undefined') {
+        setStatus('⚠ 快速编码失败，改用实时录制（约 ' + DUR + ' 秒）…', 'var(--blue)');
+        try {
+          var blob2 = await encodeRealtime();
+          if (mySeq !== genSeq) return;
+          state.videoBlob = blob2;
+          downloadBtn.disabled = false;
+          showVideoPreview(blob2);
+          setStatus('✅ 视频已生成 · ' + (blob2.size / 1024 / 1024).toFixed(2) + ' MB', 'var(--green)');
+        } catch (e2) {
+          if (mySeq === genSeq) setStatus('❌ 生成失败：' + (e2.message || e2), 'var(--pink)');
+        }
+      } else {
+        setStatus('❌ 生成失败：' + (fastErr.message || fastErr), 'var(--pink)');
+      }
+    } finally {
+      if (mySeq === genSeq) {
+        state.generating = false;
+        regenBtn.disabled = false;
+      }
+    }
+  }
+
+  /* ---------- 下载 ---------- */
+  function download() {
+    if (!state.videoBlob) return;
+    var d = new Date();
+    function p2(n) { return (n < 10 ? '0' : '') + n; }
+    var stamp = '' + d.getFullYear() + p2(d.getMonth() + 1) + p2(d.getDate()) +
+                '-' + p2(d.getHours()) + p2(d.getMinutes());
+    var ext = state.videoBlob.type.indexOf('mp4') >= 0 ? '.mp4' : '.webm';
+    var url = URL.createObjectURL(state.videoBlob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'x-post-video-' + stamp + ext;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+  }
+
+  /* ---------- 对外接口：导出图片时被调用 ---------- */
+  var lastUrl = null;
+  window._videoPlayer = {
+    handleImage: function (blob) {
+      if (lastUrl) URL.revokeObjectURL(lastUrl);
+      var url = URL.createObjectURL(blob);
+      lastUrl = url;
+      var img = new Image();
+      img.onload = function () {
+        state.imgEl = img;
+        state.imgLoaded = true;
+        previewImg.src = url;
+        section.style.display = 'block';
+        canvas.width = W;
+        canvas.height = H;
+        setTimeout(function () {
+          section.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 150);
+        generate();          // 导出后自动生成，无需任何额外点击
+      };
+      img.src = url;
+    },
+    /* 测试钩子：注入已解码音乐（自动化测试用，绕过文件选择器）*/
+    _setMusicBuffer: function (buffer, name) {
+      state.music = buffer;
+      musicNameEl.textContent = name || 'test-audio';
+      musicNameEl.title = name || 'test-audio';
+      musicClearBtn.hidden = false;
+      volumeRow.hidden = false;
+      scheduleRegen(50);
+    },
+    _state: state
+  };
+
+  /* ---------- 事件 ---------- */
+  downloadBtn.addEventListener('click', download);
+  regenBtn.addEventListener('click', generate);
+  removeBtn.addEventListener('click', function () {
+    genSeq++;                        // 作废进行中的生成
+    state.imgEl = null;
+    state.imgLoaded = false;
+    state.videoBlob = null;
+    state.generating = false;
+    hideVideoPreview();
+    previewImg.removeAttribute('src');
+    section.style.display = 'none';
+    setStatus('等待导出…');
+  });
+  musicBtn.addEventListener('click', function () { musicFileInput.click(); });
+  musicFileInput.addEventListener('change', function () {
+    loadMusicFile(this.files && this.files[0]);
+  });
+  musicClearBtn.addEventListener('click', clearMusic);
+  volumeSlider.addEventListener('input', function () {
+    state.volume = volumeSlider.value / 100;
+    volumeVal.textContent = volumeSlider.value + '%';
+    scheduleRegen(800);              // 停止拖动 0.8s 后自动重新生成
+  });
+})();
+</script>
+
+
+</body></html>
