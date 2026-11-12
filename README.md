@@ -66,7 +66,10 @@ node scripts/deploy-cloudflare.mjs --domain   # 同时绑定 x.jiuyeke.cn
 # 凭证：环境变量 HERENOW_API_KEY 或 ~/.herenow/credentials
 node scripts/deploy-herenow.mjs               # 新建站点（随机 slug）
 node scripts/deploy-herenow.mjs my-slug       # 新建/更新指定 slug
+node scripts/deploy-herenow.mjs my-slug D:/path/to/dist   # 指定发布目录（推荐：只含 index.html + vendor）
 ```
+
+> 部署脚本默认排除 `node_modules`、`outputs`、`docs`、`mcp`、`scripts` 等非站点目录，避免触发 here.now 单版本 2500 文件上限。
 
 ## 技术要点
 
@@ -82,7 +85,28 @@ node scripts/deploy-herenow.mjs my-slug       # 新建/更新指定 slug
 
 ## MCP Server（AI agent 直接生成视频）
 
-内置 MCP（Model Context Protocol）服务器，AI agent（ZCode / Claude Desktop / 任何 MCP 客户端）可**直接调用工具生成视频**，无需人工操作网页。编码引擎为本机 ffmpeg，产物规格与网页版一致：1080×1920 · 9:16 · H.264+AAC · faststart。
+内置 MCP（Model Context Protocol）服务器，AI agent（ZCode / Claude Desktop / 任何 MCP 客户端）可**直接调用工具生成视频**，无需人工操作网页。
+
+**两种接入方式，页面上点「🔌 接入 MCP」按钮即可看到可复制的标准配置：**
+
+| 方式 | 端点 | 编码能力 |
+|---|---|---|
+| 远程 HTTP（推荐） | `https://x.jiuyeke.cn/api/mcp/rpc` | Worker 返回渲染指令（见下方说明） |
+| 本地 stdio | `node mcp/server.mjs` | 本机 ffmpeg 直接产出 MP4 |
+
+```json
+{
+  "mcpServers": {
+    "x-post-video": {
+      "type": "streamable_http",
+      "url": "https://x.jiuyeke.cn/api/mcp/rpc",
+      "headers": { "Authorization": "Bearer 18596950010" }
+    }
+  }
+}
+```
+
+编码引擎为本机 ffmpeg，本地产物规格与网页版一致：1080×1920 · 9:16 · H.264+AAC · faststart。
 
 ### 启动
 
