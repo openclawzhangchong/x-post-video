@@ -1303,6 +1303,25 @@
     .post-media { margin-left: 0; }
     .post-body { margin-left: 0; }
   }
+  /* ============================================================
+     19. 桌面双屏紧凑模式（v2.4 · 纯追加段）
+     ------------------------------------------------------------
+     容器视口窄于 900px 时（桌面壳左栏约 700px），生成器可用高度
+     有限，「生成视频」按钮容易被挤到首屏之外。这里压缩首屏上部
+     留白、隐藏引导条与底部帮助，让「编辑 → 生成」一步不缺地落在
+     一屏内。所有规则只影响布局留白，不改任何元素显隐逻辑。
+     ============================================================ */
+  @media (max-height: 900px) and (max-width: 900px) {
+    .shell { padding: 16px 16px 32px; }
+    .page-title { margin-bottom: 12px; }
+    .page-title h1 { font-size: 16px; }
+    .footnotes { display: none; }
+    .onboard { display: none; }
+    .editor { gap: 12px; padding: 14px; }
+    .ed-group { padding-top: 10px; }
+    #bodyInput { min-height: 120px; }
+    .preview { margin-top: 14px; padding: 10px; }
+  }
 </style>
 <meta property="og:title" content="X Post Editor Frontend Teaching Demo">
 <meta property="og:description" content="A frontend teaching tool that simulates an X post page with real-time editing, theme switching, and image export capabilities.">
@@ -3851,6 +3870,10 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
       showVideoPreview(blob);
       setStatus('✅ 视频已生成 · ' + (blob.size / 1024 / 1024).toFixed(2) + ' MB' +
                 (state.music ? ' · 含音乐' : ''), 'var(--green)');
+      // 双屏桌面端：生成完自动落盘（WebView 外壳会接管下载事件）
+      if (window._videoPlayer && window._videoPlayer.autoDownload) {
+        setTimeout(function () { if (mySeq === genSeq) download(); }, 80);
+      }
     } catch (fastErr) {
       if (mySeq !== genSeq) return;
       if (typeof MediaRecorder !== 'undefined') {
@@ -3897,6 +3920,8 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
   /* ---------- 对外接口：导出图片时被调用 ---------- */
   var lastUrl = null;
   window._videoPlayer = {
+    /* 双屏桌面端用：设为 true 后，每次生成完成自动触发下载，无需用户再点「下载视频」 */
+    autoDownload: false,
     handleImage: function (blob) {
       if (lastUrl) URL.revokeObjectURL(lastUrl);
       var url = URL.createObjectURL(blob);
