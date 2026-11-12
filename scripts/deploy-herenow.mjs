@@ -33,12 +33,16 @@ function loadKey() {
 }
 
 function walk(dir, prefix = '') {
+  // 只发布站点所需资源：排除 node_modules / outputs / .git / docs 等，
+  // 否则这里会把本地依赖（数千文件）一起算进 Site 版本（上限 2500 文件）
+  const SKIP_DIRS = new Set(['node_modules', '.git', 'outputs', 'logs', '.herenow', 'docs', 'mcp', 'scripts']);
   let out = [];
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (SKIP_DIRS.has(e.name)) continue;
     const full = path.join(dir, e.name);
     const rel = prefix ? prefix + '/' + e.name : e.name;
     if (e.isDirectory()) out = out.concat(walk(full, rel));
-    else out.push({ full, rel, size: fs.statSync(full).size });
+    else if (!/^(package(-lock)?\.json|\.gitignore|LICENSE|README\.md)$/.test(e.name)) out.push({ full, rel, size: fs.statSync(full).size });
   }
   return out;
 }
