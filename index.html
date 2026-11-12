@@ -1195,6 +1195,96 @@
   [data-theme="light"] #bodyLenHint { color: #9a6b00; }
 
   /* ============================================================
+     18. MCP 接入弹窗（v2.3 · 纯追加段）
+     ------------------------------------------------------------
+     点「🔌 接入 MCP」打开：给出标准 MCP 客户端配置片段
+     （streamable_http 远程 / stdio 本地两种），一键复制。
+     配置里的 URL 由当前页面协议+主机推导：部署在
+     x.jiuyeke.cn 时给出 https://x.jiuyeke.cn/api/mcp/rpc。
+     ============================================================ */
+  .mcp-modal {
+    position: fixed; inset: 0; z-index: 200;
+    display: none;
+    background: rgba(0, 0, 0, .55);
+    backdrop-filter: blur(2px);
+    padding: 24px 16px;
+    overflow-y: auto;
+  }
+  .mcp-modal.open { display: block; }
+  .mcp-dialog {
+    max-width: 680px; margin: 40px auto;
+    background: var(--editor-bg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 22px 18px;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, .35);
+  }
+  .mcp-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 6px; }
+  .mcp-head h3 { margin: 0; font-size: 17px; }
+  .mcp-head p { margin: 3px 0 0; font-size: 12px; color: var(--muted); line-height: 1.6; }
+  .mcp-close {
+    margin-left: auto; flex: 0 0 auto;
+    width: 30px; height: 30px; border-radius: 8px;
+    border: 1px solid var(--input-border); background: transparent;
+    color: var(--muted); font-size: 16px; line-height: 1;
+    cursor: pointer;
+  }
+  .mcp-close:hover { color: var(--text); border-color: var(--blue); }
+  .mcp-tabs { display: inline-flex; border: 1px solid var(--input-border); border-radius: 8px; overflow: hidden; margin: 14px 0 10px; }
+  .mcp-tabs button {
+    font: inherit; font-size: 13px; line-height: 1;
+    padding: 8px 14px; border: 0; border-left: 1px solid var(--input-border);
+    background: transparent; color: var(--muted); cursor: pointer; white-space: nowrap;
+  }
+  .mcp-tabs button:first-child { border-left: 0; }
+  .mcp-tabs button.on { background: var(--hover); color: var(--text); font-weight: 600; }
+  .mcp-panel { display: none; }
+  .mcp-panel.on { display: block; }
+  .mcp-code {
+    position: relative;
+    margin: 10px 0 0;
+    padding: 12px 14px 12px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.65;
+    color: var(--text);
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .mcp-copy {
+    position: absolute; top: 8px; right: 8px;
+    font: inherit; font-size: 11px;
+    padding: 4px 10px; border-radius: 6px;
+    border: 1px solid var(--input-border);
+    background: var(--editor-bg); color: var(--muted);
+    cursor: pointer;
+  }
+  .mcp-copy:hover { color: var(--blue); border-color: var(--blue); }
+  .mcp-copy.done { color: var(--green); border-color: var(--green); }
+  .mcp-note { margin: 10px 0 0; font-size: 11px; line-height: 1.7; color: var(--muted); }
+  .mcp-note code {
+    font-size: 11px; padding: 1px 5px; border-radius: 4px;
+    background: var(--line); color: var(--text);
+  }
+  .mcp-tools { margin: 12px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+  .mcp-tools li { font-size: 12px; line-height: 1.6; color: var(--muted); }
+  .mcp-tools b { color: var(--text); font-family: ui-monospace, monospace; font-size: 12px; }
+  .mcp-status {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-left: 8px; font-size: 11px; color: var(--muted);
+  }
+  .mcp-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .mcp-dot.ok { background: var(--green); }
+  .mcp-dot.bad { background: #e5484d; }
+  @media (max-width: 480px) {
+    .mcp-dialog { margin: 12px auto; padding: 16px; }
+    .mcp-code { font-size: 11px; }
+    .mcp-tabs button { padding: 7px 10px; font-size: 12px; }
+  }
+  /* ============================================================
      17. v2.1 窄屏互动行溢出修复（纯追加）
      ------------------------------------------------------------
      现象：360~430px 视口下帖子卡互动行 6 个按钮（回复/转推/点赞/
@@ -1466,6 +1556,7 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
              和上面的演示控制区分开，避免一行塞太多控件。 -->
         <div class="toolbar toolbar-export" role="group" aria-label="导出设置">
           <button class="toolbar-primary" id="exportBtn" type="button">导出图片</button>
+          <button class="ghost" id="mcpBtn" type="button" title="查看 MCP 接入配置（AI agent 可直接生成视频）">🔌 接入 MCP</button>
 
           <div class="toolbar-group adv-only">
             <span class="toolbar-label">范围</span>
@@ -3864,5 +3955,200 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
 })();
 </script>
 
+
+<!-- ============================================================
+     MCP 接入弹窗：标准配置片段，一键复制
+     ============================================================ -->
+<div class="mcp-modal" id="mcpModal" role="dialog" aria-modal="true" aria-labelledby="mcpTitle">
+  <div class="mcp-dialog">
+    <div class="mcp-head">
+      <div>
+        <h3 id="mcpTitle">🔌 接入 MCP · 让 AI agent 直接生成视频</h3>
+        <p>把下面的配置粘进 MCP 客户端（ZCode / Claude Desktop / Cursor 等）即可调用
+          <span class="mcp-status"><span class="mcp-dot" id="mcpDot"></span><span id="mcpStatusText">检测中…</span></span>
+        </p>
+      </div>
+      <button class="mcp-close" id="mcpClose" type="button" aria-label="关闭">✕</button>
+    </div>
+
+    <div class="mcp-tabs" role="group" aria-label="接入方式">
+      <button type="button" data-mcp-tab="http" class="on">远程 HTTP（推荐）</button>
+      <button type="button" data-mcp-tab="stdio">本地 stdio</button>
+    </div>
+
+    <div class="mcp-panel on" data-mcp-panel="http">
+      <pre class="mcp-code" id="mcpHttpCode"></pre>
+      <p class="mcp-note">
+        端点 <code id="mcpEndpoint">/api/mcp/rpc</code> · 鉴权 <code>Authorization: Bearer &lt;API_KEY&gt;</code><br>
+        远程模式需要本机 MCP 服务在跑：<code>node mcp/server.mjs --http 3001</code>（或部署到服务器）。
+      </p>
+    </div>
+
+    <div class="mcp-panel" data-mcp-panel="stdio">
+      <pre class="mcp-code" id="mcpStdioCode"></pre>
+      <p class="mcp-note">
+        本地模式无需网络与 API Key，直接调用本机 ffmpeg 编码；
+        需先 <code>npm install</code>，并确保已安装 <code>ffmpeg</code>。
+      </p>
+    </div>
+
+    <ul class="mcp-tools">
+      <li><b>generate_video</b> — 图片（URL / data URL / 本地路径）→ 1080×1920 竖屏 MP4，可选背景音乐、时长、背景色</li>
+      <li><b>list_outputs</b> — 列出已生成的视频文件</li>
+      <li><b>health</b> — 服务状态</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   MCP 接入弹窗：生成标准配置片段 + 一键复制 + 本地服务探测
+   ============================================================ */
+(function () {
+  'use strict';
+  var API_KEY = '18596950010';
+  var modal = document.getElementById('mcpModal');
+  var openBtn = document.getElementById('mcpBtn');
+  var closeBtn = document.getElementById('mcpClose');
+  var httpCode = document.getElementById('mcpHttpCode');
+  var stdioCode = document.getElementById('mcpStdioCode');
+  var endpointEl = document.getElementById('mcpEndpoint');
+  var dot = document.getElementById('mcpDot');
+  var statusText = document.getElementById('mcpStatusText');
+  var tabs = Array.prototype.slice.call(modal.querySelectorAll('[data-mcp-tab]'));
+  var panels = Array.prototype.slice.call(modal.querySelectorAll('[data-mcp-panel]'));
+
+  /* 远程端点：同源推导。线上 x.jiuyeke.cn → https://x.jiuyeke.cn/api/mcp/rpc */
+  function endpointUrl() {
+    var origin = location.origin && location.origin !== 'null'
+      ? location.origin
+      : 'https://x.jiuyeke.cn';
+    return origin + '/api/mcp/rpc';
+  }
+
+  var HTTP_CONFIG = {
+    mcpServers: {
+      'x-post-video': {
+        type: 'streamable_http',
+        url: endpointUrl(),
+        headers: { Authorization: 'Bearer ' + API_KEY }
+      }
+    }
+  };
+
+  var STDIO_CONFIG = {
+    mcpServers: {
+      'x-post-video': {
+        command: 'node',
+        args: ['D:/game/x-post-video-repo/mcp/server.mjs']
+      }
+    }
+  };
+
+  function renderCodes() {
+    var ep = endpointUrl();
+    endpointEl.textContent = new URL(ep).pathname;
+    HTTP_CONFIG.mcpServers['x-post-video'].url = ep;
+    var httpText = JSON.stringify(HTTP_CONFIG, null, 2);
+    var stdioText = JSON.stringify(STDIO_CONFIG, null, 2);
+    httpCode.textContent = httpText;
+    stdioCode.textContent = stdioText;
+    // 配置文本存到 data 属性：复制按钮是 <pre> 的子节点，
+    // 直接读 textContent 会把「复制」两个字一起带走
+    httpCode.dataset.config = httpText;
+    stdioCode.dataset.config = stdioText;
+    attachCopy(httpCode);
+    attachCopy(stdioCode);
+  }
+
+  /* 每个代码块右上角挂一个「复制」按钮 */
+  function attachCopy(pre) {
+    if (pre.querySelector('.mcp-copy')) return;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'mcp-copy';
+    btn.textContent = '复制';
+    btn.addEventListener('click', function () {
+      var text = pre.dataset.config || pre.textContent;
+      function ok() {
+        btn.textContent = '已复制 ✓';
+        btn.classList.add('done');
+        setTimeout(function () {
+          btn.textContent = '复制';
+          btn.classList.remove('done');
+        }, 1600);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(ok).catch(fallback);
+      } else {
+        fallback();
+      }
+      function fallback() {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;left:-9999px;top:0;';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); ok(); } catch (e) {
+          btn.textContent = '请手动全选复制';
+        }
+        document.body.removeChild(ta);
+      }
+    });
+    pre.appendChild(btn);
+  }
+
+  /* 探测远程 MCP 端点是否可用（同源，无跨域问题） */
+  function probe() {
+    dot.className = 'mcp-dot';
+    statusText.textContent = '检测中…';
+    var base = endpointUrl().replace(/\/api\/mcp\/rpc$/, '');
+    var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 4000);
+    fetch(base + '/api/mcp/health', { signal: ctrl && ctrl.signal })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+      .then(function (j) {
+        clearTimeout(timer);
+        dot.className = 'mcp-dot ok';
+        statusText.textContent = '远程端点在线 · v' + (j.version || '—');
+      })
+      .catch(function () {
+        clearTimeout(timer);
+        dot.className = 'mcp-dot bad';
+        statusText.textContent = '远程端点未响应（可改用下方 stdio 本地模式）';
+      });
+  }
+
+  function openModal() {
+    renderCodes();
+    modal.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    probe();
+  }
+  function closeModal() {
+    modal.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  openBtn.addEventListener('click', openModal);
+  closeBtn.addEventListener('click', closeModal);
+  modal.addEventListener('click', function (e) {
+    if (e.target === modal) closeModal();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && modal.classList.contains('open')) closeModal();
+  });
+
+  tabs.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var name = b.dataset.mcpTab;
+      tabs.forEach(function (x) { x.classList.toggle('on', x === b); });
+      panels.forEach(function (p) { p.classList.toggle('on', p.dataset.mcpPanel === name); });
+    });
+  });
+
+  renderCodes();
+})();
+</script>
 
 </body></html>

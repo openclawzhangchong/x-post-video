@@ -70,6 +70,128 @@ async function fetchJson(url) {
   return r.json();
 }
 
+/* ============================================================
+   MCP 服务端（部署在 Worker 上，供 AI agent 远程调用）
+   ------------------------------------------------------------
+   协议：MCP Streamable HTTP（JSON-RPC 2.0，单次请求-响应）
+   端点：POST /api/mcp/rpc   —— 需 Authorization: Bearer <API_KEY>
+         GET  /api/mcp/rpc   —— 返回能力说明（便于人工排查）
+   编码：Worker 无 ffmpeg，视频编码改为调用外部渲染服务；
+   未配置渲染服务时，generate_video 返回最终 MP4 的「构造指令」
+   （image/尺寸/背景色/音乐参数），由调用方或本地 MCP 执行。
+   ============================================================ */
+const MCP_API_KEY = '18596950010';
+const MCP_VERSION = '2.3.0';
+
+function mcpText(id, text, isError) {
+  return { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text }], ...(isError ? { isError: true } : {}) } };
+}
+function mcpErr(id, code, message) {
+  return { jsonrpc: '2.0', id, error: { code, message } };
+}
+
+const MCP_TOOLS = [
+  {
+    name: 'generate_video',
+    description: '生成 10 秒 9:16 竖屏视频（1080×1920 MP4，H.264+AAC）：图片 contain 缩放居中、空白处背景色填充；可选背景音乐（自动循环补齐、尾部淡出）。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        image: { type: 'string', description: '图片来源：http(s) URL、data: URL 或本地路径（必填）' },
+        music: { type: 'string', description: '背景音乐来源（可选）' },
+        duration: { type: 'number', description: '时长秒数，默认 10（1~60）' },
+        theme_bg: { type: 'string', description: '空白填充背景色 hex，默认 #eef1f4；深色传 #0a0e13' },
+        filename: { type: 'string', description: '输出文件名（不含扩展名，可选）' }
+      },
+      required: ['image']
+    }
+  },
+  {
+    name: 'render_page',
+    description: '返回本站在线编辑器的可直接渲染地址（带随机内容），可用于截图后再喂给 generate_video。',
+    inputSchema: { type: 'object', properties: { theme: { type: 'string', description: 'light | dark' } } }
+  },
+  {
+    name: 'health',
+    description: '服务状态（版本 / 可用工具 / 运行位置）',
+    inputSchema: { type: 'object', properties: {} }
+  }
+];
+
+async function handleMcpRpc(request, body, origin) {
+  if (request.method === 'GET') {
+    return { protocol: 'MCP Streamable HTTP', version: MCP_VERSION, endpoint: '/api/mcp/rpc', tools: MCP_TOOLS.map(t => t.name) };
+  }
+  const msg = body || {};
+  const id = msg.id === undefined ? null : msg.id;
+  const method = msg.method;
+  const params = msg.params || {};
+
+  // 通知类消息（无 id）不需要响应体
+  if (msg.id === undefined && method && method.startsWith('notifications/')) return null;
+
+  if (method === 'initialize') {
+    return {
+      jsonrpc: '2.0', id,
+      result: {
+        protocolVersion: params.protocolVersion || '2024-11-05',
+        capabilities: { tools: {} },
+        serverInfo: { name: 'x-post-video', version: MCP_VERSION }
+      }
+    };
+  }
+  if (method === 'tools/list') return { jsonrpc: '2.0', id, result: { tools: MCP_TOOLS } };
+  if (method === 'ping') return { jsonrpc: '2.0', id, result: {} };
+
+  if (method === 'tools/call') {
+    const name = params.name;
+    const a = params.arguments || {};
+    if (name === 'health') {
+      return mcpText(id, JSON.stringify({
+        server: 'x-post-video', version: MCP_VERSION,
+        runtime: 'cloudflare-worker',
+        encoder: '本地部署 ffmpeg（远程调用 generate_video 会返回渲染指令）',
+        tools: MCP_TOOLS.map(t => t.name),
+        site: origin
+      }, null, 2));
+    }
+    if (name === 'render_page') {
+      const theme = a.theme === 'dark' ? 'dark' : 'light';
+      return mcpText(id, JSON.stringify({
+        url: origin + '/?theme=' + theme,
+        hint: '打开该地址即可看到随机内容的帖子卡；截取卡片后把图片 URL 传给 generate_video'
+      }, null, 2));
+    }
+    if (name === 'generate_video') {
+      if (!a.image) return mcpText(id, '缺少必填参数 image（http(s) URL / data: URL / 本地路径）', true);
+      const duration = Math.min(60, Math.max(1, Number(a.duration) || 10));
+      const bg = /^#[0-9a-fA-F]{6}$/.test(a.theme_bg || '') ? a.theme_bg : '#eef1f4';
+      const spec = '1080x1920 H.264+AAC 30fps faststart';
+      // Worker 无 ffmpeg：返回可直接执行的本地渲染指令 + 完整 ffmpeg 命令
+      const safeName = (a.filename || 'x-post-video').replace(/[^\\w.-]/g, '_');
+      const ffmpegCmd = [
+        'ffmpeg -y -loop 1 -t ' + duration + ' -i "' + a.image + '"',
+        a.music ? '-stream_loop -1 -i "' + a.music + '"' : '',
+        '-filter_complex "[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=' + bg.replace('#', '0x') + ',setsar=1,format=yuv420p[v]"',
+        '-map "[v]"', a.music ? '-map 1:a -af "afade=t=out:st=' + Math.max(0, duration - 0.8).toFixed(2) + ':d=0.8"' : '-an',
+        '-c:v libx264 -preset medium -crf 20 -r 30',
+        a.music ? '-c:a aac -b:a 128k' : '',
+        '-shortest -movflags +faststart "' + safeName + '.mp4"'
+      ].filter(Boolean).join(' ');
+      return mcpText(id, JSON.stringify({
+        status: 'needs_local_encoder',
+        message: '远程 Worker 不含视频编码器。请在装有 ffmpeg 的机器上启动本地 MCP 服务执行（node mcp/server.mjs），或直接运行下方命令。',
+        spec,
+        params: { image: a.image, music: a.music || null, duration, theme_bg: bg, filename: safeName },
+        ffmpeg: ffmpegCmd,
+        local_mcp: { command: 'node', args: ['mcp/server.mjs'], transport: 'stdio' }
+      }, null, 2));
+    }
+    return mcpText(id, '未知工具: ' + name, true);
+  }
+  return mcpErr(id, -32601, 'Method not found: ' + method);
+}
+
 export default {
   async fetch(request) {
     const url = new URL(request.url);
@@ -80,6 +202,30 @@ export default {
       return new Response(MUXER, { headers: { "content-type": "application/javascript; charset=utf-8", "cache-control": "public, max-age=86400" } });
     }
     if (p === "/healthz") return new Response("ok");
+
+    // MCP 远程端点：AI agent 直接调用（API Key 鉴权）
+    if (p === "/api/mcp/rpc") {
+      const origin = url.origin;
+      const key = (request.headers.get('authorization') || '').replace(/^Bearer\\s+/i, '') || request.headers.get('x-api-key');
+      if (key !== MCP_API_KEY) {
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Unauthorized：请带 Authorization: Bearer <API_KEY> 或 X-API-Key 头' } }), {
+          status: 401, headers: { 'content-type': 'application/json; charset=utf-8' }
+        });
+      }
+      if (request.method === 'OPTIONS') {
+        return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type, x-api-key', 'access-control-allow-methods': 'GET, POST, OPTIONS' } });
+      }
+      let body = null;
+      if (request.method === 'POST') {
+        try { body = await request.json(); } catch (e) { return J({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }, 400); }
+      }
+      const out = await handleMcpRpc(request, body, origin);
+      if (out === null) return new Response(null, { status: 202, headers: { 'access-control-allow-origin': '*' } });
+      return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'cache-control': 'no-store' } });
+    }
+
+    // /api/mcp 健康（免鉴权，页面探测用）
+    if (p === "/api/mcp/health") return J({ ok: true, server: 'x-post-video', version: MCP_VERSION });
 
     // 毒鸡汤代理（JSON）：{ content: "..." }
     if (p === "/api/ruseo/poison_soup") {
