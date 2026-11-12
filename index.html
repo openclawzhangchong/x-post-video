@@ -810,26 +810,11 @@
     border-radius: 4px;
   }
 
-  .disclaimer {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 9;
-    padding: 7px 12px;
-    font-size: 11px;
-    letter-spacing: .06em;
-    text-align: center;
-    color: var(--muted);
-    background: var(--page-bg);
-    border-top: 1px solid var(--border);
-  }
-  .shell { padding-bottom: 76px; }  /* 给固定页脚留出安全距离（保护 main 内 footnotes） */
+  .shell { padding-bottom: 40px; }
 
-  /* body 级底部余量：视频生成区在 main.shell 之外（末位块），其 margin-bottom
-     会塌陷出 body 不计入文档高度；用 body padding 兜底，确保滚动到底时
-     fixed 的 disclaimer（约 30px 高）不盖住视频区按钮行 */
-  body { padding-bottom: 60px; }
+  /* 底部余量：视频生成区在 main.shell 之外（末位块），其 margin-bottom
+     会塌陷出 body 不计入文档高度；用 body padding 兜底做视觉留白 */
+  body { padding-bottom: 28px; }
 
   @media (max-width: 420px) {
     .post { padding: 14px; }
@@ -1106,14 +1091,15 @@
     .app { grid-template-columns: minmax(0, 1fr); }
     .editor, .stage, .preview { min-width: 0; }
   }
-  /* 681~980px（桌面双屏左栏典型宽度）：保住「编辑 | 预览」双列。
-     编辑器压到 240px（足够放下昵称与正文输入框），把省下的空间
+  /* 520~980px（桌面双屏左栏典型宽度）：保住「编辑 | 预览」双列。
+     编辑器压到 220px（昵称/正文输入框仍可用），把省下的空间
      全给预览 —— 帖子卡需要 ≥440px 才能让互动行 6 个按钮排成一行。 */
-  @media (min-width: 681px) and (max-width: 980px) {
-    .app { grid-template-columns: 240px minmax(0, 1fr); gap: 12px; }
+  @media (min-width: 520px) and (max-width: 980px) {
+    .app { grid-template-columns: 220px minmax(0, 1fr); gap: 10px; }
     .editor, .stage, .preview { min-width: 0; }
-    .editor { padding: 11px; }
+    .editor { padding: 10px; gap: 9px; }
     .grid-2 { grid-template-columns: 1fr; }
+    .field input, .field textarea { font-size: 13px; padding: 7px 9px; }
     /* 工具条在窄栏里折行排列，否则「自动保存图片·自动生成视频」会被裁掉 */
     .toolbar { flex-wrap: wrap; gap: 8px 10px; padding: 9px 10px; }
     body.simple-mode #exportBtn { padding: 9px 16px; font-size: 13px; }
@@ -1224,12 +1210,98 @@
   [data-theme="light"] #bodyLenHint { color: #9a6b00; }
 
   /* ============================================================
-     18. MCP 接入弹窗（v2.3 · 纯追加段）
+     21. 桌面双屏壳工具条（v2.6 · 纯追加段）
+     ------------------------------------------------------------
+     仅当页面运行在桌面壳里（window.ipc 存在，wry 注入）时由 JS
+     去掉 hidden 显示；网页版永远隐藏。吸顶常驻，生成完一眼看到
+     成品状态，投递/复制/定位按钮就在手边。
+     ============================================================ */
+  #dbBar{
+    position:sticky;top:0;z-index:80;
+    display:flex;align-items:center;gap:6px;
+    padding:6px 10px;margin:0 0 10px;
+    background:var(--editor-bg);
+    border-bottom:1px solid var(--border);
+    font-size:12px;color:var(--muted);
+  }
+  #dbBar[hidden]{display:none}
+  .db-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}
+  .db-dot.ok{background:var(--green)}
+  .db-dot.warn{background:var(--pink)}
+  .db-status{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .db-space{flex:1}
+  #dbBar button{
+    font:inherit;font-size:11px;padding:4px 8px;border-radius:6px;
+    border:1px solid var(--border);background:var(--card-bg);color:var(--text);
+    cursor:pointer;white-space:nowrap;
+  }
+  #dbBar button:hover{border-color:var(--blue);color:var(--blue)}
+  #dbBar button.primary{background:var(--green);border-color:var(--green);color:#fff;font-weight:600}
+  #dbBar button.primary:hover{opacity:.9}
+
+  /* ============================================================
+     22. AI 爆款（v2.7 · 纯追加段）
+     ------------------------------------------------------------
+     根据正文调 LLM 生成爆款标题与发布文案，结果逐条一键复制，
+     文案可一键替换正文（发视频号时的简介直接用）。
+     API：agnes-ai.cn（OpenAI 兼容，CORS 全开，浏览器直连）。
+     Key 内置于桌面/网页版；限流时错误原样展示。
+     ============================================================ */
+  .ai-sub { color: var(--muted); font-weight: 400; }
+  .ai-row { display: flex; align-items: center; gap: 10px; }
+  .ai-btn {
+    font: inherit; font-size: 12.5px; font-weight: 600;
+    padding: 7px 14px; border-radius: 8px;
+    border: 1px solid var(--pink); background: var(--pink); color: #fff;
+    cursor: pointer; white-space: nowrap;
+  }
+  .ai-btn:hover { opacity: .88; }
+  .ai-btn:disabled { opacity: .5; cursor: default; }
+  .ai-status { font-size: 11px; color: var(--muted); }
+  .ai-result { margin-top: 10px; display: grid; gap: 10px; }
+  .ai-block {
+    background: var(--line); border-radius: 10px; padding: 10px 12px;
+  }
+  .ai-block h4 {
+    margin: 0 0 8px; font-size: 11px; color: var(--muted);
+    letter-spacing: .08em; font-weight: 700;
+  }
+  .ai-item {
+    display: flex; align-items: flex-start; gap: 8px; padding: 6px 0;
+    border-top: 1px dashed var(--border);
+  }
+  .ai-item:first-of-type { border-top: 0; }
+  .ai-item p {
+    margin: 0; flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.65;
+    color: var(--text); overflow-wrap: break-word; white-space: pre-wrap;
+  }
+  .ai-copy {
+    flex: none; font: inherit; font-size: 10.5px;
+    padding: 3px 9px; border-radius: 5px;
+    border: 1px solid var(--border); background: var(--card-bg); color: var(--muted);
+    cursor: pointer;
+  }
+  .ai-copy:hover { color: var(--blue); border-color: var(--blue); }
+  .ai-copy.done { color: var(--green); border-color: var(--green); }
+  .ai-replace {
+    margin-top: 8px; width: 100%;
+    font: inherit; font-size: 11.5px; padding: 6px 10px; border-radius: 7px;
+    border: 1px dashed var(--blue); background: transparent; color: var(--blue);
+    cursor: pointer;
+  }
+  .ai-replace:hover { background: var(--indigo-soft); }
+
      ------------------------------------------------------------
      点「🔌 接入 MCP」打开：给出标准 MCP 客户端配置片段
      （streamable_http 远程 / stdio 本地两种），一键复制。
      配置里的 URL 由当前页面协议+主机推导：部署在
      x.jiuyeke.cn 时给出 https://x.jiuyeke.cn/api/mcp/rpc。
+     ============================================================ */
+  /* ============================================================
+     18. MCP 接入弹窗（v2.3 · 纯追加段）
+     ------------------------------------------------------------
+     点「🔌 接入 MCP」打开：标准 MCP 客户端配置片段，一键复制。
+     URL 同源推导；打开时探测 /api/mcp/health 显示在线状态。
      ============================================================ */
   .mcp-modal {
     position: fixed; inset: 0; z-index: 200;
@@ -1383,6 +1455,20 @@
 <body data-theme="light" class="nv-on">
 <!-- 防闪烁：在解析到样式前先挂模式与主题 class（默认浅色主题；记忆值优先） -->
 <script>try{if(localStorage.getItem('pv-mode')!=='expert')document.body.classList.add('simple-mode');if(localStorage.getItem('pv-theme')==='dark')document.body.dataset.theme='dark';}catch(e){document.body.classList.add('simple-mode')}</script>
+
+<!-- 桌面双屏壳工具条：仅在桌面 App（window.ipc 存在）时由 JS 显示，网页版永远隐藏。
+     状态与按钮原属外壳底部状态栏，v2.6 起挪进生成器页面 —— 视线不用跨栏。
+     与外壳的通信：按钮 → window.ipc（copy/deliver/reveal/openout/togglelog），
+     下载/剪贴板结果 ← 外壳 evaluate window.__host(...)。 -->
+<div id="dbBar" hidden>
+  <span class="db-dot" id="dbDot"></span>
+  <span class="db-status" id="dbStatus">等待生成…</span>
+  <span class="db-space"></span>
+  <button type="button" id="dbDeliver" class="primary" title="刷新剪贴板（文件+路径）并把焦点切到右侧">投递到右侧</button>
+  <button type="button" id="dbCopy" title="重新复制（文件+路径）">再复制</button>
+  <button type="button" id="dbReveal" title="在资源管理器中定位文件">定位文件</button>
+  <button type="button" id="dbOpenOut" title="打开成品目录 output/">打开目录</button>
+</div>
 <main class="shell">
   <header class="page-title">
     <div>
@@ -1516,6 +1602,16 @@
 X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行。
 同一个 DOM，换一套 CSS 变量，就是另一套主题。</textarea>
           <p class="hint">点进来直接打字即可，回车换行会原样保留在右侧卡片上。</p>
+        </div>
+
+        <!-- AI 爆款：根据正文生成爆款标题与发布文案（LLM），结果逐条可复制 -->
+        <div class="field" id="aiSection">
+          <span class="group-label">AI 爆款 <span class="ai-sub">· 根据正文生成标题与发布文案</span></span>
+          <div class="ai-row">
+            <button type="button" id="aiBtn" class="ai-btn">✨ 生成爆款标题 / 文案</button>
+            <span class="ai-status" id="aiStatus"></span>
+          </div>
+          <div id="aiResult" class="ai-result" hidden></div>
         </div>
 
         <div class="field adv-only">
@@ -1896,9 +1992,6 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
     <p>帖子卡上不显示粉丝数，粉丝数在个人主页。</p>
   </footer>
 </main>
-
-<!-- 固定声明：不可关闭，也不提供关闭按钮 -->
-<div class="disclaimer">模拟 X 界面 · 内容创作工具</div>
 
 <script>
 (function () {
@@ -4226,6 +4319,202 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
   });
 
   renderCodes();
+})();
+</script>
+<script>
+/* ============================================================
+   AI 爆款（v2.7）：根据正文调 LLM 生成标题与发布文案
+   ------------------------------------------------------------
+   API：agnes-ai.cn（OpenAI 兼容 /v1/chat/completions，CORS 全开，
+   浏览器直连，无需代理）。限流（未实名 RPM 低）时错误原样展示。
+   结果逐条一键复制；文案支持一键替换正文。
+   ============================================================ */
+(function () {
+  'use strict';
+  var AI_API = 'https://api.agnes-ai.cn/v1/chat/completions';
+  var AI_KEY = 'sk-XKTHku86x6AM5SQNh2by6BcTDrZWG4UXpq3KCwil5WS8iVjz';
+  var AI_MODEL = 'agnes-3.0-flash';
+
+  var btn = document.getElementById('aiBtn');
+  var statusEl = document.getElementById('aiStatus');
+  var resultEl = document.getElementById('aiResult');
+  var busy = false;
+
+  function setStatus(text) { statusEl.textContent = text; }
+
+  function copyText(text, btnEl) {
+    function ok() {
+      btnEl.textContent = '已复制 ✓';
+      btnEl.classList.add('done');
+      setTimeout(function () { btnEl.textContent = '复制'; btnEl.classList.remove('done'); }, 1500);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(ok).catch(function () { fallback(); });
+    } else { fallback(); }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;left:-9999px;top:0;';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); ok(); } catch (e) { btnEl.textContent = '复制失败'; }
+      document.body.removeChild(ta);
+    }
+  }
+
+  /* 从模型输出中容错提取 JSON（模型偶尔会在 JSON 外包 ``` 或说明文字） */
+  function extractJson(text) {
+    var m = text.match(/\{[\s\S]*\}/);
+    if (!m) return null;
+    try { return JSON.parse(m[0]); } catch (e) {}
+    // 容错：单引号 → 双引号、尾逗号
+    try {
+      return JSON.parse(m[0].replace(/'/g, '"').replace(/,\s*([}\]])/g, '$1'));
+    } catch (e) { return null; }
+  }
+
+  function itemRow(text, copyLabel) {
+    var row = document.createElement('div');
+    row.className = 'ai-item';
+    var p = document.createElement('p');
+    p.textContent = text;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ai-copy';
+    b.textContent = copyLabel || '复制';
+    b.addEventListener('click', function () { copyText(text, b); });
+    row.appendChild(p);
+    row.appendChild(b);
+    return row;
+  }
+
+  function render(titles, copies) {
+    resultEl.innerHTML = '';
+    var bt = document.createElement('div');
+    bt.className = 'ai-block';
+    bt.appendChild(Object.assign(document.createElement('h4'), { textContent: '爆款标题' }));
+    titles.forEach(function (x) { bt.appendChild(itemRow(x)); });
+    resultEl.appendChild(bt);
+
+    var bc = document.createElement('div');
+    bc.className = 'ai-block';
+    bc.appendChild(Object.assign(document.createElement('h4'), { textContent: '发布文案' }));
+    copies.forEach(function (x) {
+      var row = itemRow(x);
+      var rep = document.createElement('button');
+      rep.type = 'button';
+      rep.className = 'ai-replace';
+      rep.textContent = '替换正文（右侧卡片同步更新）';
+      rep.addEventListener('click', function () {
+        bodyInput.value = x;
+        lastSoupText = x;             // 防止毒鸡汤异步回调覆盖用户选择
+        bodyInput.dispatchEvent(new Event('input', { bubbles: true }));
+        setStatus('正文已替换 ✓');
+      });
+      row.appendChild(rep);
+      bc.appendChild(row);
+    });
+    resultEl.appendChild(bc);
+    resultEl.hidden = false;
+  }
+
+  btn.addEventListener('click', function () {
+    if (busy) return;
+    var source = bodyInput.value.trim();
+    if (!source) { setStatus('请先填写正文'); return; }
+    busy = true;
+    btn.disabled = true;
+
+    var prompt = '你是短视频爆款文案专家，熟悉微信视频号的传播风格。根据下面的帖子内容，生成：\n' +
+      '1. titles：3 个爆款标题，每个不超过 20 字，有钩子、有张力\n' +
+      '2. copies：3 条发布文案，每条 30~60 字，适合视频号发布的简介，口语化、有共鸣\n' +
+      '帖子内容：\n' + source + '\n' +
+      '只输出 JSON（不要 markdown 代码块、不要解释）：{"titles":["...","...","..."],"copies":["...","...","..."]}';
+
+    // 429 限流自动重试（未实名 RPM 低）：等待递增，最多 3 次
+    var attempt = 0;
+    function call() {
+      attempt++;
+      setStatus(attempt > 1 ? '限流中，' + (attempt * 8) + ' 秒后自动重试（第 ' + attempt + ' 次）…' : '生成中…（约 3~10 秒）');
+      fetch(AI_API, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'Authorization': 'Bearer ' + AI_KEY },
+        body: JSON.stringify({
+          model: AI_MODEL,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.9
+        })
+      })
+        .then(function (res) { return res.json().then(function (j) { return { ok: res.ok, status: res.status, j: j }; }); })
+        .then(function (r) {
+          if (r.status === 429 && attempt < 3) {
+            setTimeout(call, attempt * 8000);
+            return;
+          }
+          busy = false;
+          btn.disabled = false;
+          if (r.j && r.j.error) {
+            var m = r.j.error.message || '接口错误';
+            setStatus(r.status === 429
+              ? '❌ 限流（未实名 RPM 低），等 30 秒再试或到 platform 实名认证'
+              : '❌ ' + m.slice(0, 80));
+            return;
+          }
+          var content = r.j && r.j.choices && r.j.choices[0] && r.j.choices[0].message && r.j.choices[0].message.content;
+          var data = content && extractJson(content);
+          if (!data || !Array.isArray(data.titles) || !Array.isArray(data.copies) || !data.titles.length) {
+            setStatus('❌ 返回格式异常，请重试');
+            return;
+          }
+          setStatus('✅ 已生成 ' + data.titles.length + ' 个标题 · ' + data.copies.length + ' 条文案');
+          render(data.titles.slice(0, 3), data.copies.slice(0, 3));
+        })
+        .catch(function (e) {
+          busy = false;
+          btn.disabled = false;
+          setStatus('❌ 请求失败：' + (e && e.message ? e.message : e));
+        });
+    }
+    call();
+  });
+})();
+</script>
+
+<script>
+/* ============================================================
+   桌面双屏壳集成（v2.6）：window.ipc 存在 = 运行在桌面 App 里。
+   - 显示顶部工具条（网页版保持 hidden）
+   - 按钮通过 window.ipc 发动作给外壳（copy/deliver/reveal/openout/togglelog）
+   - window.__host 接收外壳推送（downloading/file/poster/fail/delivered/recopied）
+     更新状态。注意：外壳会同时把事件推给外壳页和本页，两边各自处理。
+   ============================================================ */
+(function () {
+  'use strict';
+  if (!(window.ipc && typeof window.ipc.postMessage === 'function')) return;
+  var bar = document.getElementById('dbBar');
+  if (!bar) return;
+  bar.hidden = false;
+  var dot = document.getElementById('dbDot');
+  var status = document.getElementById('dbStatus');
+  function send(o) { try { window.ipc.postMessage(JSON.stringify(o)); } catch (e) {} }
+  function setStatus(text, cls) {
+    status.textContent = text;
+    dot.className = 'db-dot' + (cls ? ' ' + cls : '');
+  }
+  window.__host = function (d) {
+    if (!d || !d.t) return;
+    if (d.t === 'downloading') setStatus('生成中：' + (d.name || ''), 'warn');
+    else if (d.t === 'file') setStatus('✅ ' + (d.name || '') + ' · ' + (d.size || '') + ' · 已进剪贴板', 'ok');
+    else if (d.t === 'poster') setStatus('海报已存 ' + (d.name || ''), '');
+    else if (d.t === 'fail') setStatus('❌ 失败：' + (d.state || d.name || ''), 'warn');
+    else if (d.t === 'delivered') setStatus(d.ok ? '已投递到右侧 · 上传框里 Ctrl+V' : '投递失败：剪贴板被占用', d.ok ? 'ok' : 'warn');
+    else if (d.t === 'recopied') setStatus(d.ok ? '已重新复制（文件 + 路径）' : '复制失败', d.ok ? 'ok' : 'warn');
+  };
+  document.getElementById('dbDeliver').addEventListener('click', function () { send({ t: 'deliver' }); });
+  document.getElementById('dbCopy').addEventListener('click', function () { send({ t: 'copy' }); });
+  document.getElementById('dbReveal').addEventListener('click', function () { send({ t: 'reveal' }); });
+  document.getElementById('dbOpenOut').addEventListener('click', function () { send({ t: 'openout' }); });
+  setStatus('等待生成…');
 })();
 </script>
 
