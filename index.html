@@ -128,13 +128,27 @@
     align-items: start;
   }
 
-  @media (max-width: 880px) {
+  @media (max-width: 680px) {
     .shell { padding: 20px 16px 56px; }
     .app {
       grid-template-columns: 1fr;
       gap: 24px;
     }
     .editor { position: static; }
+  }
+
+  /* 窄容器（桌面双屏左栏约 630px）：编辑器收窄，保住「编辑 | 预览」双列。
+     预览必须与编辑同屏 —— 它才是用户判断内容对不对的唯一依据，
+     被挤到折叠线以下是致命体验问题。 */
+  @media (min-width: 681px) and (max-width: 980px) {
+    .shell { padding: 14px 12px 28px; }
+    .app {
+      grid-template-columns: 268px minmax(0, 1fr);
+      gap: 16px;
+    }
+    .editor { padding: 12px; gap: 10px; }
+    .preview { padding: 8px; margin-top: 10px; }
+    .page-title h1 { font-size: 15px; }
   }
 
   /* 宽屏时编辑面板是 sticky 的：面板一旦比视口还高，
@@ -1088,9 +1102,24 @@
        ③ 只在 ≤880px 生效，≥881px 仍是 340px minmax(0,1fr) 两列；
        ④ 实测 414 / 768 / 1024 / 1440 的网格列宽与改前完全一致。
      ============================================================ */
-  @media (max-width: 880px) {
+  @media (max-width: 680px) {
     .app { grid-template-columns: minmax(0, 1fr); }
     .editor, .stage, .preview { min-width: 0; }
+  }
+  /* 681~980px（桌面双屏左栏典型宽度）：保住「编辑 | 预览」双列。
+     编辑器压到 240px（足够放下昵称与正文输入框），把省下的空间
+     全给预览 —— 帖子卡需要 ≥440px 才能让互动行 6 个按钮排成一行。 */
+  @media (min-width: 681px) and (max-width: 980px) {
+    .app { grid-template-columns: 240px minmax(0, 1fr); gap: 12px; }
+    .editor, .stage, .preview { min-width: 0; }
+    .editor { padding: 11px; }
+    .grid-2 { grid-template-columns: 1fr; }
+    /* 工具条在窄栏里折行排列，否则「自动保存图片·自动生成视频」会被裁掉 */
+    .toolbar { flex-wrap: wrap; gap: 8px 10px; padding: 9px 10px; }
+    body.simple-mode #exportBtn { padding: 9px 16px; font-size: 13px; }
+    body.simple-mode #mcpBtn { padding: 7px 10px; font-size: 12px; }
+    .btn-group button { padding: 6px 9px; font-size: 11.5px; }
+    .toolbar-note { margin-left: 0; flex-basis: 100%; font-size: 10px; }
   }
 
   /* ============================================================
@@ -1303,6 +1332,25 @@
     .post-media { margin-left: 0; }
     .post-body { margin-left: 0; }
   }
+  /* ============================================================
+     20. v2.5 窄卡片数字不折行（纯追加）
+     ------------------------------------------------------------
+     现象：桌面双屏左栏里预览卡片只有 380~420px，互动行 5 个数字
+     被压成两行（"1" 在上一行、"万" 掉到下一行），像排版崩了。
+     根因：.count 是普通 span，数字与单位之间允许换行。
+     修法：给数字加 nowrap，并允许整行换行 —— 宁可按钮换行，
+     也不要单个数字被拆开。
+     ============================================================ */
+  .count, .tr-count { white-space: nowrap; }
+  /* 卡片仍窄时优先压缩按钮间距与字号，而不是让它们折行 */
+  @media (max-width: 980px) {
+    .post-actions, .tr-actions { gap: 0 2px; max-width: none; }
+    .action, .tr-action { gap: 2px; padding: 3px 0; font-size: 12px; }
+    .action svg, .tr-action svg { width: 15px; height: 15px; }
+    .count, .tr-count { font-size: 12px; }
+    .post-body, .post-media { margin-left: 0; }
+  }
+
   /* ============================================================
      19. 桌面双屏紧凑模式（v2.4 · 纯追加段）
      ------------------------------------------------------------
@@ -2833,8 +2881,13 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
   }
 
   // 生成导出用的 SVG 字符串（1 倍坐标 + 2 倍尺寸，交给 SVG 自己缩放）
+  // 导出宽度固定 600px：与屏幕上卡片实际宽度脱钩。
+  // 桌面双屏左栏只有 600 多像素时，屏幕上卡片会缩到 300~450px，
+  // 若按实测宽度导出，1080 宽的画布就得放大低清内容，字会糊。
+  // 固定 600 能保证排版始终是设计基准宽度，导出稳定清晰。
+  var EXPORT_CARD_W = 600;
   function buildExportSvg(range, pad, scale) {
-    var cardW = Math.round(postCard.getBoundingClientRect().width) || 600;
+    var cardW = EXPORT_CARD_W;
 
     // 1) 临时容器：克隆要导出的卡片，插进文档才能量出真实高度
     var temp = document.createElement('div');
