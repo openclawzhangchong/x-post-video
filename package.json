@@ -1,15 +1,8 @@
 {
   "name": "x-post-video",
   "version": "2.2.0",
-  "description": "X 帖子卡片一键生成 10 秒竖屏视频（含 MCP server，AI agent 可直接调用）",
+  "description": "X 帖子卡片一键生成 10 秒竖屏视频（纯前端单文件工具 + 部署脚本）",
   "type": "module",
-  "scripts": {
-    "mcp": "node mcp/server.mjs",
-    "mcp:http": "node mcp/server.mjs --http 3001"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.0",
-    "express": "^4.21.0",
-    "zod": "^3.24.0"
-  }
+  "scripts": {},
+  "dependencies": {}
 }

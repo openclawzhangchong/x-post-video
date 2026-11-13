@@ -9,7 +9,5 @@ Thumbs.db
 .DS_Store
 *.tmp
 
-# MCP 运行产物与依赖
+# 部署产物
 outputs/
-node_modules/
-package-lock.json

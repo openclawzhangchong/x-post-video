@@ -69,7 +69,7 @@ node scripts/deploy-herenow.mjs my-slug       # 新建/更新指定 slug
 node scripts/deploy-herenow.mjs my-slug D:/path/to/dist   # 指定发布目录（推荐：只含 index.html + vendor）
 ```
 
-> 部署脚本默认排除 `node_modules`、`outputs`、`docs`、`mcp`、`scripts` 等非站点目录，避免触发 here.now 单版本 2500 文件上限。
+> 部署脚本默认排除 `node_modules`、`outputs`、`docs`、`scripts` 等非站点目录，避免触发 here.now 单版本 2500 文件上限。
 
 ## 技术要点
 
@@ -83,103 +83,9 @@ node scripts/deploy-herenow.mjs my-slug D:/path/to/dist   # 指定发布目录�
 | 响应式 | 360px 无横向溢出；窄屏互动行按 X 官方规则缩写数字；`@media` 规则不进导出 SVG |
 | 隐私 | 全部计算在浏览器本地完成；头像在线生成仅请求 DiceBear 生成式服务；不上传任何用户内容 |
 
-## MCP Server（AI agent 直接生成视频）
+## 实测验证
 
-内置 MCP（Model Context Protocol）服务器，AI agent（ZCode / Claude Desktop / 任何 MCP 客户端）可**直接调用工具生成视频**，无需人工操作网页。
-
-**两种接入方式，页面上点「🔌 接入 MCP」按钮即可看到可复制的标准配置：**
-
-| 方式 | 端点 | 编码能力 |
-|---|---|---|
-| 远程 HTTP（推荐） | `https://x.jiuyeke.cn/api/mcp/rpc` | Worker 返回渲染指令（见下方说明） |
-| 本地 stdio | `node mcp/server.mjs` | 本机 ffmpeg 直接产出 MP4 |
-
-```json
-{
-  "mcpServers": {
-    "x-post-video": {
-      "type": "streamable_http",
-      "url": "https://x.jiuyeke.cn/api/mcp/rpc",
-      "headers": { "Authorization": "Bearer 18596950010" }
-    }
-  }
-}
-```
-
-编码引擎为本机 ffmpeg，本地产物规格与网页版一致：1080×1920 · 9:16 · H.264+AAC · faststart。
-
-### 启动
-
-```bash
-npm install                        # 首次安装依赖（@modelcontextprotocol/sdk 等）
-node mcp/server.mjs                # stdio 模式（本机 MCP 客户端接入）
-node mcp/server.mjs --http 3001    # HTTP 模式（远程 agent 调用，带鉴权）
-```
-
-前置依赖：本机需安装 [ffmpeg](https://ffmpeg.org)（`winget install Gyan.FFmpeg`）。
-
-### 工具列表
-
-| 工具 | 说明 |
-|---|---|
-| `generate_video` | 生成视频。参数：`image`（必填，URL / data URL / 本地路径）、`music`（可选）、`duration`（默认 10 秒，1~60）、`theme_bg`（空白填充背景色，默认 `#eef1f4`，深色传 `#0a0e13`）、`filename`（可选） |
-| `list_outputs` | 列出已生成的视频（文件/大小/时间） |
-| `health` | 服务状态（版本/ffmpeg/输出目录） |
-
-### MCP 客户端接入配置
-
-**ZCode / 通用 stdio 客户端：**
-
-```json
-{
-  "mcpServers": {
-    "x-post-video": {
-      "command": "node",
-      "args": ["D:/game/x-post-video-repo/mcp/server.mjs"]
-    }
-  }
-}
-```
-
-**Claude Desktop（claude_desktop_config.json）：**
-
-```json
-{
-  "mcpServers": {
-    "x-post-video": {
-      "command": "node",
-      "args": ["D:/game/x-post-video-repo/mcp/server.mjs"]
-    }
-  }
-}
-```
-
-**HTTP 远程调用（API Key 鉴权）：**
-
-```bash
-# 健康检查（免鉴权）
-curl http://localhost:3001/health
-
-# 调用工具（必须带 key）
-curl -X POST http://localhost:3001/mcp \
-  -H "content-type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "Authorization: Bearer 18596950010" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"generate_video","arguments":{"image":"https://example.com/post.png","duration":10}}}'
-```
-
-- API Key：默认 `18596950010`，可用环境变量 `MCP_API_KEY` 覆盖
-- 鉴权方式：`Authorization: Bearer <key>` 或 `X-API-Key: <key>`；stdio 模式为本地进程不做校验
-- MCP 端点：`POST /mcp`（Streamable HTTP；请求头需 `Accept: application/json, text/event-stream`）
-
-### 端到端测试
-
-```bash
-node mcp/server.mjs --http 3001 &   # 启动
-node mcp/test-client.mjs            # 5 项断言：tools/list / 本地图+音乐 / data URL / 错误处理 / list_outputs
-```
-
-产物音轨与规格已用 ffprobe 验证：`video h264 + audio aac`，含音乐版 10 秒约 0.19 MB。
+产物音轨与规格已用 ffprobe 验证：`video h264 + audio aac`，含音乐版 10 秒约 0.19 MB；生成器页面 63 项自动化断言全通过（见 docs/evidence/）。
 
 
 
@@ -188,9 +94,6 @@ node mcp/test-client.mjs            # 5 项断言：tools/list / 本地图+音�
 ├── vendor/
 │   ├── mp4-muxer.min.js        # MP4 封装库（MIT，来源 npm mp4-muxer@5.2.2）
 │   └── mp4-muxer.LICENSE
-├── mcp/
-│   ├── server.mjs              # MCP 服务器（stdio / HTTP 双模式，API Key 鉴权）
-│   └── test-client.mjs         # HTTP 端到端测试客户端
 ├── scripts/
 │   ├── deploy-cloudflare.mjs   # Cloudflare Workers 部署脚本
 │   └── deploy-herenow.mjs      # here.now 部署脚本
