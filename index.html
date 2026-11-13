@@ -3566,12 +3566,42 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
   #videoEl { max-width: 100%; max-height: 100%; display: none; border-radius: 4px; background: transparent; }
   #videoStatus { font-size: 13px; text-align: center; margin-bottom: 12px; min-height: 18px; color: var(--muted); line-height: 1.5; }
   #musicRow { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
-  #musicBtn, #clearMusicBtn {
+  #musicBtn, #clearMusicBtn, #musicHistBtn {
     padding: 6px 10px; font-size: 12px; border-radius: 6px;
     border: 1px solid var(--input-border); background: transparent;
     color: var(--text); cursor: pointer; white-space: nowrap;
   }
-  #musicBtn:hover, #clearMusicBtn:hover { border-color: var(--blue); color: var(--blue); }
+  #musicBtn:hover, #clearMusicBtn:hover, #musicHistBtn:hover { border-color: var(--blue); color: var(--blue); }
+
+  /* ---------- 历史音乐列表 ---------- */
+  #musicHistory {
+    margin: 0 0 10px; padding: 8px;
+    background: var(--line); border-radius: 8px;
+    display: grid; gap: 6px; max-height: 190px; overflow-y: auto;
+  }
+  #musicHistory[hidden] { display: none; }
+  .mh-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 6px;
+    background: var(--card-bg); border: 1px solid transparent;
+    cursor: pointer; font-size: 12px;
+  }
+  .mh-item:hover { border-color: var(--blue); }
+  .mh-item.on { border-color: var(--green); background: var(--green); }
+  .mh-item.on .mh-name { color: #fff; font-weight: 600; }
+  .mh-item.on .mh-meta { color: rgba(255,255,255,.8); }
+  .mh-name {
+    flex: 1; min-width: 0; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .mh-meta { flex: none; font-size: 10.5px; color: var(--muted); }
+  .mh-del {
+    flex: none; width: 20px; height: 20px; border-radius: 4px;
+    border: 0; background: transparent; color: var(--muted);
+    cursor: pointer; font-size: 13px; line-height: 1;
+  }
+  .mh-del:hover { color: var(--pink); background: var(--line); }
+  .mh-empty { font-size: 11.5px; color: var(--muted); text-align: center; padding: 6px 0; }
   #musicName { font-size: 12px; color: var(--muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #volumeRow { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
   #volumeRow input[type=range] { flex: 1; accent-color: var(--blue); }
@@ -3591,10 +3621,13 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
   <div id="videoStatus">准备中…</div>
   <div id="musicRow">
     <button id="musicBtn" type="button">🎵 选择背景音乐</button>
+    <button id="musicHistBtn" type="button" hidden title="从用过的音乐里选">📚 历史</button>
     <button id="clearMusicBtn" type="button" hidden title="移除音乐">✕</button>
     <span id="musicName">未选择</span>
     <input id="musicFile" type="file" accept="audio/*" hidden>
   </div>
+  <!-- 历史音乐列表（点「历史」展开） -->
+  <div id="musicHistory" hidden></div>
   <div id="volumeRow" hidden>
     <span>音量</span>
     <input id="musicVolume" type="range" min="0" max="100" value="80">
@@ -3625,6 +3658,8 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
   var regenBtn = document.getElementById('regenBtn');
   var removeBtn = document.getElementById('reuploadBtn');
   var musicBtn = document.getElementById('musicBtn');
+  var musicHistBtn = document.getElementById('musicHistBtn');
+  var musicHistoryEl = document.getElementById('musicHistory');
   var musicClearBtn = document.getElementById('clearMusicBtn');
   var musicNameEl = document.getElementById('musicName');
   var musicFileInput = document.getElementById('musicFile');
@@ -3668,31 +3703,257 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
   }
 
   /* ---------- 背景音乐 ---------- */
+  /* 音乐记忆（IndexedDB）：音频动辄几 MB，localStorage 装不下。
+     存原始字节 + 文件名 + 时长；启动时自动恢复上次那首。
+     上限 8 首，超出淘汰最久未用的。 */
+  var MDB_NAME = 'xpost-music', MDB_STORE = 'tracks', MUSIC_LIMIT = 8;
+  var mdb = null, musicHistory = [];   // [{id,name,size,dur,usedAt}]
+  var currentMusicId = null;
+
+  function openMusicDB() {
+    return new Promise(function (resolve) {
+      if (mdb) return resolve(mdb);
+      if (!window.indexedDB) return resolve(null);
+      var req = indexedDB.open(MDB_NAME, 1);
+      req.onupgradeneeded = function (e) {
+        var db = e.target.result;
+        if (!db.objectStoreNames.contains(MDB_STORE)) {
+          db.createObjectStore(MDB_STORE, { keyPath: 'id' });
+        }
+      };
+      req.onsuccess = function (e) { mdb = e.target.result; resolve(mdb); };
+      req.onerror = function () { resolve(null); };
+    });
+  }
+
+  function mdbAll() {
+    return openMusicDB().then(function (db) {
+      if (!db) return [];
+      return new Promise(function (resolve) {
+        var tx = db.transaction(MDB_STORE, 'readonly');
+        var req = tx.objectStore(MDB_STORE).getAll();
+        req.onsuccess = function () { resolve(req.result || []); };
+        req.onerror = function () { resolve([]); };
+      });
+    });
+  }
+
+  function mdbPut(rec) {
+    return openMusicDB().then(function (db) {
+      if (!db) return false;
+      return new Promise(function (resolve) {
+        var tx = db.transaction(MDB_STORE, 'readwrite');
+        tx.objectStore(MDB_STORE).put(rec);
+        tx.oncomplete = function () { resolve(true); };
+        tx.onerror = function () { resolve(false); };
+      });
+    });
+  }
+
+  function mdbDel(id) {
+    return openMusicDB().then(function (db) {
+      if (!db) return false;
+      return new Promise(function (resolve) {
+        var tx = db.transaction(MDB_STORE, 'readwrite');
+        tx.objectStore(MDB_STORE).delete(id);
+        tx.oncomplete = function () { resolve(true); };
+        tx.onerror = function () { resolve(false); };
+      });
+    });
+  }
+
+  function fmtDur(s) {
+    s = Math.round(s || 0);
+    return Math.floor(s / 60) + ':' + (s % 60 < 10 ? '0' : '') + (s % 60);
+  }
+  function fmtSize(b) {
+    if (b < 1024 * 1024) return (b / 1024).toFixed(0) + 'KB';
+    return (b / 1024 / 1024).toFixed(1) + 'MB';
+  }
+
+  /* 把解码好的音频写进库，并刷新列表 */
+  async function saveMusicToStore(name, bytes, decoded) {
+    var id = 'm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    var rec = {
+      id: id, name: name, size: bytes.byteLength,
+      dur: decoded ? decoded.duration : 0,
+      usedAt: Date.now(),
+      blob: bytes
+    };
+    await mdbPut(rec);
+    currentMusicId = id;
+    await refreshHistory();
+    await trimHistory();
+  }
+
+  async function trimHistory() {
+    var all = await mdbAll();
+    if (all.length <= MUSIC_LIMIT) return;
+    all.sort(function (a, b) { return (a.usedAt || 0) - (b.usedAt || 0); });
+    var drop = all.slice(0, all.length - MUSIC_LIMIT);
+    for (var i = 0; i < drop.length; i++) await mdbDel(drop[i].id);
+    await refreshHistory();
+  }
+
+  async function refreshHistory() {
+    var all = await mdbAll();
+    all.sort(function (a, b) { return (b.usedAt || 0) - (a.usedAt || 0); });
+    musicHistory = all;
+    musicHistBtn.hidden = all.length === 0;
+    renderHistory();
+  }
+
+  function renderHistory() {
+    musicHistoryEl.innerHTML = '';
+    if (!musicHistory.length) {
+      musicHistoryEl.hidden = true;
+      return;
+    }
+    musicHistory.forEach(function (t) {
+      var row = document.createElement('div');
+      row.className = 'mh-item' + (t.id === currentMusicId ? ' on' : '');
+      var nm = document.createElement('span');
+      nm.className = 'mh-name';
+      nm.textContent = t.name;
+      nm.title = t.name;
+      var meta = document.createElement('span');
+      meta.className = 'mh-meta';
+      meta.textContent = fmtDur(t.dur) + ' · ' + fmtSize(t.size || 0);
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'mh-del';
+      del.textContent = '✕';
+      del.title = '从历史中删除';
+      del.addEventListener('click', function (e) {
+        e.stopPropagation();
+        deleteMusicFromStore(t.id);
+      });
+      row.appendChild(nm);
+      row.appendChild(meta);
+      row.appendChild(del);
+      row.addEventListener('click', function () { useStoredMusic(t.id); });
+      musicHistoryEl.appendChild(row);
+    });
+  }
+
+  async function useStoredMusic(id) {
+    var all = await mdbAll();
+    var rec = all.filter(function (x) { return x.id === id; })[0];
+    if (!rec) return;
+    try {
+      setStatus('🎵 载入「' + rec.name + '」…', 'var(--blue)');
+      var decoded = await decodeBytes(rec.blob);
+      state.music = decoded;
+      currentMusicId = id;
+      rec.usedAt = Date.now();
+      await mdbPut(rec);
+      musicNameEl.textContent = rec.name;
+      musicNameEl.title = rec.name + ' · ' + decoded.duration.toFixed(1) + 's';
+      musicClearBtn.hidden = false;
+      volumeRow.hidden = false;
+      musicHistoryEl.hidden = true;
+      await refreshHistory();
+      scheduleRegen(100);
+    } catch (e) {
+      setStatus('❌ 音乐载入失败：' + (e.message || e), 'var(--pink)');
+    }
+  }
+
+  async function deleteMusicFromStore(id) {
+    await mdbDel(id);
+    if (id === currentMusicId) {
+      // 删掉的正是当前用的 → 清空当前音乐
+      state.music = null;
+      currentMusicId = null;
+      musicNameEl.textContent = '未选择';
+      musicNameEl.title = '';
+      musicClearBtn.hidden = true;
+      volumeRow.hidden = true;
+      scheduleRegen(100);
+    }
+    await refreshHistory();
+  }
+
+  function decodeBytes(bytes) {
+    return new Promise(function (resolve, reject) {
+      var ac = new (window.AudioContext || window.webkitAudioContext)();
+      // decodeAudioData 需要 ArrayBuffer 副本（部分浏览器会 detach 原 buffer）
+      var ab = bytes instanceof ArrayBuffer ? bytes.slice(0) : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+      ac.decodeAudioData(ab, function (buf) {
+        try { ac.close(); } catch (e) {}
+        resolve(buf);
+      }, function (err) {
+        try { ac.close(); } catch (e) {}
+        reject(err || new Error('解码失败'));
+      });
+    });
+  }
+
+  /* 启动时恢复上次用的音乐 */
+  async function restoreLastMusic() {
+    await openMusicDB();
+    await refreshHistory();
+    if (!musicHistory.length) return;
+    var last = musicHistory[0];   // 已按 usedAt 倒序
+    try {
+      var decoded = await decodeBytes(last.blob);
+      state.music = decoded;
+      currentMusicId = last.id;
+      musicNameEl.textContent = last.name;
+      musicNameEl.title = last.name + ' · ' + decoded.duration.toFixed(1) + 's · 已自动恢复';
+      musicClearBtn.hidden = false;
+      volumeRow.hidden = false;
+      renderHistory();
+      // 恢复音量设置
+      var v = storageGetNum('pv-music-vol');
+      if (v !== null) {
+        state.volume = v;
+        volumeSlider.value = Math.round(v * 100);
+        volumeVal.textContent = Math.round(v * 100) + '%';
+      }
+      setStatus('🎵 已恢复上次音乐：' + last.name, 'var(--blue)');
+    } catch (e) {
+      // 恢复失败不阻塞流程
+    }
+  }
+
+  function storageGetNum(k) {
+    try {
+      var v = localStorage.getItem(k);
+      if (v === null) return null;
+      var n = Number(v);
+      return isFinite(n) ? n : null;
+    } catch (e) { return null; }
+  }
+
   async function loadMusicFile(file) {
     if (!file) return;
     try {
       setStatus('🎵 解析音乐中…', 'var(--blue)');
       var buf = await file.arrayBuffer();
-      var ac = new (window.AudioContext || window.webkitAudioContext)();
-      var decoded = await ac.decodeAudioData(buf);
-      try { ac.close(); } catch (e) {}
+      var decoded = await decodeBytes(buf);
       state.music = decoded;
       musicNameEl.textContent = file.name;
       musicNameEl.title = file.name + ' · ' + decoded.duration.toFixed(1) + 's';
       musicClearBtn.hidden = false;
       volumeRow.hidden = false;
+      // 存进历史（下次自动恢复）
+      await saveMusicToStore(file.name, buf, decoded);
       scheduleRegen(100);
     } catch (e) {
       setStatus('❌ 音乐解析失败：' + (e.message || e), 'var(--pink)');
     }
   }
+
   function clearMusic() {
     state.music = null;
+    currentMusicId = null;
     musicNameEl.textContent = '未选择';
     musicNameEl.title = '';
     musicClearBtn.hidden = true;
     volumeRow.hidden = true;
     musicFileInput.value = '';
+    renderHistory();
     scheduleRegen(100);
   }
   function scheduleRegen(delay) {
@@ -3983,11 +4244,18 @@ X 的帖子页看上去复杂，拆开只有三段：头部、正文、互动行
     loadMusicFile(this.files && this.files[0]);
   });
   musicClearBtn.addEventListener('click', clearMusic);
+  musicHistBtn.addEventListener('click', function () {
+    musicHistoryEl.hidden = !musicHistoryEl.hidden;
+  });
   volumeSlider.addEventListener('input', function () {
     state.volume = volumeSlider.value / 100;
     volumeVal.textContent = volumeSlider.value + '%';
+    try { localStorage.setItem('pv-music-vol', String(state.volume)); } catch (e) {}
     scheduleRegen(800);              // 停止拖动 0.8s 后自动重新生成
   });
+
+  /* 启动：恢复上次用的背景音乐（IndexedDB 里取最近一条） */
+  restoreLastMusic();
 })();
 </script>
 
